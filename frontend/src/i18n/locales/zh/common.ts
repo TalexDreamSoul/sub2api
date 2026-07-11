@@ -189,6 +189,8 @@ export default {
     channelPricing: '渠道定价',
     channelMonitor: '渠道监控',
     channelStatus: '渠道状态',
+    quotaStatus: '容量状态',
+    quotaStatusConfig: '容量状态配置',
     riskControl: '风控中心',
   },
 

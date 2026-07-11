@@ -103,6 +103,10 @@ func RegisterAdminRoutes(
 		// 渠道管理
 		registerChannelRoutes(admin, h)
 
+		// 公开额度状态页配置
+		admin.GET("/quota-status", h.QuotaStatus.GetConfig)
+		admin.PUT("/quota-status", h.QuotaStatus.UpdateConfig)
+
 		// 渠道监控
 		registerChannelMonitorRoutes(admin, h)
 

@@ -499,6 +499,57 @@ export default {
     }
   },
 
+  quotaStatus: {
+    title: '账号容量状态',
+    description: '查看各渠道账号的额度使用情况',
+    signIn: '登录',
+    backToDashboard: '返回控制台',
+    loadError: '加载容量状态失败',
+    updatedAt: '更新于 {time}',
+    groupSummary: '{available} / {total} 个账号可用',
+    emptyGroup: '该分组暂无展示账号',
+    noQuotaDetails: '暂未获取到额度明细',
+    upstreamSample: '上游额度采样',
+    resetsAt: '{time} 重置',
+    unknown: '未知',
+    disabled: {
+      title: '容量状态页未启用',
+      description: '管理员尚未开放账号容量展示。',
+    },
+    empty: {
+      title: '暂无容量数据',
+      description: '管理员尚未配置需要展示的分组和账号。',
+    },
+    summary: {
+      title: '容量概览',
+      total: '展示账号',
+      available: '当前可用',
+      attention: '需要关注',
+    },
+    status: {
+      available: '可用',
+      limited: '受限或冷却中',
+      unavailable: '不可用',
+    },
+    dimensions: {
+      total: '总额度',
+      daily: '日额度',
+      weekly: '周额度',
+      five_hour: '5 小时额度',
+      seven_day: '7 天额度',
+      seven_day_sonnet: '7 天 Sonnet',
+      seven_day_fable: '7 天 Fable',
+      gemini_shared_daily: '共享日额度',
+      gemini_pro_daily: 'Pro 日额度',
+      gemini_flash_daily: 'Flash 日额度',
+      gemini_shared_minute: '共享分钟额度',
+      gemini_pro_minute: 'Pro 分钟额度',
+      gemini_flash_minute: 'Flash 分钟额度',
+      grok_requests: '请求额度',
+      grok_tokens: 'Token 额度',
+    },
+  },
+
   affiliate: {
     title: '邀请返利',
     description: '邀请新用户注册，并将返利额度转入账户余额',

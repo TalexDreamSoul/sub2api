@@ -40,6 +40,8 @@ func resolveAdminAccessRule(method, fullPath string) middleware.AdminAccessRule 
 		return moduleRule(service.AdminPermissionGroupsRead, service.AdminPermissionGroupsWrite, action)
 	case strings.HasPrefix(path, "/accounts"):
 		return moduleRule(service.AdminPermissionAccountsRead, service.AdminPermissionAccountsWrite, action)
+	case strings.HasPrefix(path, "/quota-status"):
+		return moduleRule(service.AdminPermissionAccountsRead, service.AdminPermissionAccountsWrite, action)
 	case strings.HasPrefix(path, "/openai"):
 		return moduleRule(service.AdminPermissionAccountsRead, service.AdminPermissionAccountsWrite, action)
 	case strings.HasPrefix(path, "/gemini"):

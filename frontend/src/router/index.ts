@@ -175,6 +175,16 @@ const routes: RouteRecordRaw[] = [
       title: 'Legal Document'
     }
   },
+  {
+    path: '/quota-status',
+    name: 'QuotaStatus',
+    component: () => import('@/views/public/QuotaStatusView.vue'),
+    meta: {
+      requiresAuth: false,
+      title: 'Account Capacity Status',
+      titleKey: 'quotaStatus.title'
+    }
+  },
 
   // ==================== User Routes ====================
   {
@@ -468,6 +478,18 @@ const routes: RouteRecordRaw[] = [
     }
   },
   {
+    path: '/admin/channels/quota-status',
+    name: 'AdminQuotaStatus',
+    component: () => import('@/views/admin/QuotaStatusConfigView.vue'),
+    meta: {
+      requiresAuth: true,
+      requiresAdmin: true,
+      title: 'Account Capacity Status',
+      titleKey: 'admin.quotaStatus.title',
+      descriptionKey: 'admin.quotaStatus.description'
+    }
+  },
+  {
     path: '/monitor',
     name: 'ChannelStatus',
     component: () => import('@/views/user/ChannelStatusView.vue'),
@@ -703,7 +725,7 @@ let authInitialized = false
 const navigationLoading = useNavigationLoadingState()
 // 延迟初始化预加载，传入 router 实例
 let routePrefetch: ReturnType<typeof useRoutePrefetch> | null = null
-const BACKEND_MODE_ALLOWED_PATHS = ['/login', '/key-usage', '/setup', '/payment/result', '/payment/airwallex', '/legal']
+const BACKEND_MODE_ALLOWED_PATHS = ['/login', '/key-usage', '/quota-status', '/setup', '/payment/result', '/payment/airwallex', '/legal']
 const BACKEND_MODE_CALLBACK_PATHS = [
   '/auth/callback',
   '/auth/linuxdo/callback',

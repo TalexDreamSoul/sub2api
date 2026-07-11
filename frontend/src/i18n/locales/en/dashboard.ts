@@ -494,6 +494,57 @@ export default {
     }
   },
 
+  quotaStatus: {
+    title: 'Account Capacity Status',
+    description: 'Current quota usage across configured channel accounts',
+    signIn: 'Sign in',
+    backToDashboard: 'Back to dashboard',
+    loadError: 'Failed to load capacity status',
+    updatedAt: 'Updated {time}',
+    groupSummary: '{available} of {total} accounts available',
+    emptyGroup: 'No displayed accounts in this group',
+    noQuotaDetails: 'Quota details are not available yet',
+    upstreamSample: 'Upstream quota sample',
+    resetsAt: 'Resets {time}',
+    unknown: 'Unknown',
+    disabled: {
+      title: 'Capacity status is disabled',
+      description: 'The administrator has not enabled public account capacity reporting.',
+    },
+    empty: {
+      title: 'No capacity data',
+      description: 'No groups or accounts have been configured for display.',
+    },
+    summary: {
+      title: 'Capacity overview',
+      total: 'Displayed accounts',
+      available: 'Available now',
+      attention: 'Needs attention',
+    },
+    status: {
+      available: 'Available',
+      limited: 'Limited or cooling down',
+      unavailable: 'Unavailable',
+    },
+    dimensions: {
+      total: 'Total quota',
+      daily: 'Daily quota',
+      weekly: 'Weekly quota',
+      five_hour: '5-hour quota',
+      seven_day: '7-day quota',
+      seven_day_sonnet: '7-day Sonnet',
+      seven_day_fable: '7-day Fable',
+      gemini_shared_daily: 'Shared daily quota',
+      gemini_pro_daily: 'Pro daily quota',
+      gemini_flash_daily: 'Flash daily quota',
+      gemini_shared_minute: 'Shared minute quota',
+      gemini_pro_minute: 'Pro minute quota',
+      gemini_flash_minute: 'Flash minute quota',
+      grok_requests: 'Request quota',
+      grok_tokens: 'Token quota',
+    },
+  },
+
   affiliate: {
     title: 'Affiliate Rebates',
     description: 'Invite new users and convert your rebate quota into account balance',

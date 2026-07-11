@@ -139,6 +139,18 @@ func TestResolveAdminAccessRule(t *testing.T) {
 			permission: service.AdminPermissionAccountsRead,
 		},
 		{
+			name:       "quota_status_get_requires_accounts_read",
+			method:     http.MethodGet,
+			path:       "/api/v1/admin/quota-status",
+			permission: service.AdminPermissionAccountsRead,
+		},
+		{
+			name:       "quota_status_update_requires_accounts_write",
+			method:     http.MethodPut,
+			path:       "/api/v1/admin/quota-status",
+			permission: service.AdminPermissionAccountsWrite,
+		},
+		{
 			name:       "nested_user_subscriptions_route_requires_subscriptions_read",
 			method:     http.MethodGet,
 			path:       "/api/v1/admin/users/:id/subscriptions",

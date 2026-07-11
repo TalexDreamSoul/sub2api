@@ -189,6 +189,8 @@ export default {
     channelPricing: 'Channel Pricing',
     channelMonitor: 'Channel Monitor',
     channelStatus: 'Channel Status',
+    quotaStatus: 'Capacity Status',
+    quotaStatusConfig: 'Capacity Status Config',
     riskControl: 'Risk Control',
   },
 

@@ -263,6 +263,7 @@ export interface PublicSettings {
   server_utc_offset?: string
   balance_low_notify_enabled: boolean
   account_quota_notify_enabled: boolean
+  account_usage_reset_time_format?: 'full' | 'short' | 'localized' | 'countdown_only'
   balance_low_notify_threshold: number
   channel_monitor_enabled: boolean
   channel_monitor_default_interval_seconds: number

@@ -57,6 +57,7 @@ var schedulerNeutralExtraKeyPrefixes = []string{
 	"codex_5h_",
 	"codex_7d_",
 	"passive_usage_",
+	"quota_notify_state_",
 }
 
 var schedulerNeutralExtraKeys = map[string]struct{}{
@@ -1586,6 +1587,35 @@ func (r *accountRepository) UpdateExtra(ctx context.Context, id int64, updates m
 		r.syncSchedulerAccountSnapshot(ctx, id)
 	}
 	return nil
+}
+
+func (r *accountRepository) ClaimQuotaNotification(ctx context.Context, accountID int64, stateKey, cycleKey string) (bool, error) {
+	stateKey = strings.TrimSpace(stateKey)
+	cycleKey = strings.TrimSpace(cycleKey)
+	if accountID <= 0 || stateKey == "" || cycleKey == "" {
+		return false, nil
+	}
+	client := clientFromContext(ctx, r.client)
+	result, err := client.ExecContext(ctx, `
+		UPDATE accounts
+		SET extra = jsonb_set(
+			COALESCE(extra, '{}'::jsonb),
+			ARRAY[$2]::text[],
+			to_jsonb($3::text),
+			true
+		), updated_at = NOW()
+		WHERE id = $1
+			AND deleted_at IS NULL
+			AND COALESCE(extra ->> $2, '') <> $3
+	`, accountID, stateKey, cycleKey)
+	if err != nil {
+		return false, err
+	}
+	affected, err := result.RowsAffected()
+	if err != nil {
+		return false, err
+	}
+	return affected > 0, nil
 }
 
 func shouldEnqueueSchedulerOutboxForExtraUpdates(updates map[string]any) bool {

@@ -288,6 +288,7 @@ type AccountUsageService struct {
 	antigravityQuotaFetcher *AntigravityQuotaFetcher
 	grokQuotaFetcher        *GrokQuotaFetcher
 	openAIQuotaService      *OpenAIQuotaService
+	balanceNotifyService    *BalanceNotifyService
 	cache                   *UsageCache
 	identityCache           IdentityCache
 	tlsFPProfileService     *TLSFingerprintProfileService
@@ -302,6 +303,7 @@ func NewAccountUsageService(
 	antigravityQuotaFetcher *AntigravityQuotaFetcher,
 	grokQuotaFetcher *GrokQuotaFetcher,
 	openAIQuotaService *OpenAIQuotaService,
+	balanceNotifyService *BalanceNotifyService,
 	cache *UsageCache,
 	identityCache IdentityCache,
 	tlsFPProfileService *TLSFingerprintProfileService,
@@ -314,6 +316,7 @@ func NewAccountUsageService(
 		antigravityQuotaFetcher: antigravityQuotaFetcher,
 		grokQuotaFetcher:        grokQuotaFetcher,
 		openAIQuotaService:      openAIQuotaService,
+		balanceNotifyService:    balanceNotifyService,
 		cache:                   cache,
 		identityCache:           identityCache,
 		tlsFPProfileService:     tlsFPProfileService,
@@ -757,7 +760,12 @@ func (s *AccountUsageService) persistOpenAICodexProbeSnapshot(accountID int64, u
 	go func() {
 		updateCtx, updateCancel := context.WithTimeout(context.Background(), 5*time.Second)
 		defer updateCancel()
-		_ = s.accountRepo.UpdateExtra(updateCtx, accountID, updates)
+		if err := s.accountRepo.UpdateExtra(updateCtx, accountID, updates); err != nil {
+			return
+		}
+		if s.balanceNotifyService != nil {
+			s.balanceNotifyService.CheckPersistedOpenAIQuotaSnapshot(updateCtx, accountID)
+		}
 	}()
 }
 

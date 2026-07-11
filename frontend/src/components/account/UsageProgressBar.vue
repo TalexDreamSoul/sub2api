@@ -26,7 +26,7 @@
     </div>
 
     <!-- Progress bar row -->
-    <div class="flex items-center gap-1">
+    <div class="flex flex-wrap items-center gap-1">
       <!-- Label badge (fixed width for alignment) -->
       <span
         :class="['w-[32px] shrink-0 rounded px-1 text-center text-[10px] font-medium', labelClass]"
@@ -48,8 +48,13 @@
       </span>
 
       <!-- Reset time -->
-      <span v-if="shouldShowResetTime" class="shrink-0 text-[10px] text-gray-400">
-        {{ formatResetTime }}
+      <span
+        v-if="shouldShowResetTime"
+        class="flex min-w-0 flex-wrap items-center gap-1 text-[10px] text-gray-400"
+        :title="resetTimeTitle"
+      >
+        <span class="shrink-0">{{ formatResetTime }}</span>
+        <span v-if="absoluteResetTime" class="shrink-0">· {{ absoluteResetTime }}</span>
       </span>
     </div>
   </div>
@@ -59,6 +64,7 @@
 import { computed, ref, watch } from 'vue'
 import { useIntervalFn } from '@vueuse/core'
 import { useI18n } from 'vue-i18n'
+import { useAppStore } from '@/stores/app'
 import type { WindowStats } from '@/types'
 import { formatCompactNumber } from '@/utils/format'
 
@@ -71,7 +77,8 @@ const props = defineProps<{
   showNowWhenIdle?: boolean
 }>()
 
-const { t } = useI18n()
+const { t, locale } = useI18n()
+const appStore = useAppStore()
 
 // Reactive clock for countdown — only runs when a reset time is shown,
 // to avoid creating many idle timers across large account lists.
@@ -174,6 +181,48 @@ const formatResetTime = computed(() => {
   } else {
     return `${diffMins}m`
   }
+})
+
+const resetTimeFormat = computed(() =>
+  appStore.cachedPublicSettings?.account_usage_reset_time_format || 'full'
+)
+
+const absoluteResetTime = computed(() => {
+  if (!props.resetsAt || resetTimeFormat.value === 'countdown_only') return ''
+  if (props.showNowWhenIdle && props.utilization <= 0) return ''
+  const date = new Date(props.resetsAt)
+  if (Number.isNaN(date.getTime())) return ''
+
+  const year = date.getFullYear()
+  const month = String(date.getMonth() + 1).padStart(2, '0')
+  const day = String(date.getDate()).padStart(2, '0')
+  const hour = String(date.getHours()).padStart(2, '0')
+  const minute = String(date.getMinutes()).padStart(2, '0')
+
+  if (resetTimeFormat.value === 'short') {
+    return `${month}-${day} ${hour}:${minute}`
+  }
+  if (resetTimeFormat.value === 'localized') {
+    return new Intl.DateTimeFormat(locale.value, {
+      year: 'numeric',
+      month: 'long',
+      day: 'numeric',
+      hour: '2-digit',
+      minute: '2-digit',
+      hour12: false,
+    }).format(date)
+  }
+  return `${year}-${month}-${day} ${hour}:${minute}`
+})
+
+const resetTimeTitle = computed(() => {
+  if (!props.resetsAt) return ''
+  const date = new Date(props.resetsAt)
+  if (Number.isNaN(date.getTime())) return props.resetsAt
+  return new Intl.DateTimeFormat(locale.value, {
+    dateStyle: 'full',
+    timeStyle: 'long',
+  }).format(date)
 })
 
 // Window stats formatters

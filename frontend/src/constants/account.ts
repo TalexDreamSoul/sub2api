@@ -14,6 +14,12 @@ export const QUOTA_RESET_MODE_ROLLING = 'rolling' as const
 export const QUOTA_RESET_MODE_FIXED = 'fixed' as const
 export type QuotaResetMode = typeof QUOTA_RESET_MODE_ROLLING | typeof QUOTA_RESET_MODE_FIXED
 
+export type OpenAIQuotaNotifyWindow = '5h' | '7d'
+export interface OpenAIQuotaNotifyRule {
+  window: OpenAIQuotaNotifyWindow
+  remaining_percent: number
+}
+
 /** Vertex AI location options for Service Account accounts */
 export const VERTEX_LOCATION_OPTIONS = [
   {

@@ -1924,6 +1924,15 @@
         </div>
       </div>
 
+      <OpenAIQuotaNotifyRules
+        v-if="account?.platform === 'openai' && account?.type === 'oauth'"
+        :enabled="openAIQuotaNotifyEnabled"
+        :rules="openAIQuotaNotifyRules"
+        :global-enabled="quotaNotifyGlobalEnabled"
+        @update:enabled="openAIQuotaNotifyEnabled = $event"
+        @update:rules="openAIQuotaNotifyRules = $event"
+      />
+
       <div
         v-if="account?.platform === 'openai'"
         class="border-t border-gray-200 pt-4 dark:border-dark-600 space-y-4"
@@ -2535,6 +2544,7 @@ import ProxyAdBanner from '@/components/common/ProxyAdBanner.vue'
 import GroupSelector from '@/components/common/GroupSelector.vue'
 import ModelWhitelistSelector from '@/components/account/ModelWhitelistSelector.vue'
 import QuotaLimitCard from '@/components/account/QuotaLimitCard.vue'
+import OpenAIQuotaNotifyRules from '@/components/account/OpenAIQuotaNotifyRules.vue'
 import {
   applyAntigravityProjectID,
   applyHeaderOverride,
@@ -2549,7 +2559,7 @@ import {
 } from '@/components/account/credentialsBuilder'
 import { formatDateTime, formatDateTimeLocalInput, parseDateTimeLocalInput } from '@/utils/format'
 import { createStableObjectKeyResolver } from '@/utils/stableObjectKey'
-import { VERTEX_LOCATION_OPTIONS } from '@/constants/account'
+import { VERTEX_LOCATION_OPTIONS, type OpenAIQuotaNotifyRule } from '@/constants/account'
 import {
   OPENAI_WS_MODE_CTX_POOL,
   OPENAI_WS_MODE_OFF,
@@ -2706,6 +2716,8 @@ const autoPause5hThreshold = ref<number | null>(null)
 const autoPause7dThreshold = ref<number | null>(null)
 const autoPause5hDisabled = ref(false)
 const autoPause7dDisabled = ref(false)
+const openAIQuotaNotifyEnabled = ref(false)
+const openAIQuotaNotifyRules = ref<OpenAIQuotaNotifyRule[]>([])
 const mixedScheduling = ref(false) // For antigravity accounts: enable mixed scheduling
 const allowOverages = ref(false) // For antigravity accounts: enable AI Credits overages
 const antigravityProjectId = ref('')
@@ -3180,6 +3192,16 @@ const syncFormFromAccount = (newAccount: Account | null) => {
 	autoPause7dThreshold.value = typeof extra?.auto_pause_7d_threshold === 'number' ? extra.auto_pause_7d_threshold * 100 : null
 	autoPause5hDisabled.value = extra?.auto_pause_5h_disabled === true
 	autoPause7dDisabled.value = extra?.auto_pause_7d_disabled === true
+	openAIQuotaNotifyEnabled.value = extra?.openai_quota_notify_enabled === true
+	openAIQuotaNotifyRules.value = Array.isArray(extra?.openai_quota_notify_rules)
+		? extra.openai_quota_notify_rules
+			.map((rule) => rule as Partial<OpenAIQuotaNotifyRule>)
+			.filter((rule) => (rule.window === '5h' || rule.window === '7d') && Number.isInteger(rule.remaining_percent))
+			.map((rule) => ({
+				window: rule.window as '5h' | '7d',
+				remaining_percent: Number(rule.remaining_percent),
+			}))
+		: []
 
   // Load OpenAI passthrough toggle (OpenAI OAuth/SetupToken/API Key)
   openaiPassthroughEnabled.value = false
@@ -4382,6 +4404,30 @@ const handleSubmit = async () => {
 			newExtra.auto_pause_7d_disabled = true
 		} else {
 			delete newExtra.auto_pause_7d_disabled
+		}
+		if (props.account.type === 'oauth') {
+			const normalizedNotifyRules = openAIQuotaNotifyRules.value.map((rule) => ({
+				window: rule.window,
+				remaining_percent: Number(rule.remaining_percent),
+			}))
+			const invalidRule = normalizedNotifyRules.some((rule) =>
+				!Number.isInteger(rule.remaining_percent) || rule.remaining_percent < 1 || rule.remaining_percent > 99
+			)
+			const uniqueRules = new Set(normalizedNotifyRules.map((rule) => `${rule.window}:${rule.remaining_percent}`))
+			if (invalidRule || uniqueRules.size !== normalizedNotifyRules.length || (openAIQuotaNotifyEnabled.value && normalizedNotifyRules.length === 0)) {
+				appStore.showError(t('admin.accounts.openai.quotaNotify.invalidRules'))
+				return
+			}
+			if (openAIQuotaNotifyEnabled.value) {
+				newExtra.openai_quota_notify_enabled = true
+			} else {
+				delete newExtra.openai_quota_notify_enabled
+			}
+			if (normalizedNotifyRules.length > 0) {
+				newExtra.openai_quota_notify_rules = normalizedNotifyRules
+			} else {
+				delete newExtra.openai_quota_notify_rules
+			}
 		}
 
 		delete newExtra.codex_image_generation_bridge_enabled

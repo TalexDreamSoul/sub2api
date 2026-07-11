@@ -91,6 +91,7 @@ func (h *SettingHandler) GetPublicSettings(c *gin.Context) {
 		ServerUTCOffset:                  timezone.UTCOffset(),
 		BalanceLowNotifyEnabled:          settings.BalanceLowNotifyEnabled,
 		AccountQuotaNotifyEnabled:        settings.AccountQuotaNotifyEnabled,
+		AccountUsageResetTimeFormat:      settings.AccountUsageResetTimeFormat,
 		BalanceLowNotifyThreshold:        settings.BalanceLowNotifyThreshold,
 		BalanceLowNotifyRechargeURL:      settings.BalanceLowNotifyRechargeURL,
 

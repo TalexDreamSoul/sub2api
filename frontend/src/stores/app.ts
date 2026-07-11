@@ -366,6 +366,7 @@ export const useAppStore = defineStore('app', () => {
         version: siteVersion.value,
         balance_low_notify_enabled: false,
         account_quota_notify_enabled: false,
+        account_usage_reset_time_format: 'full',
         balance_low_notify_threshold: 0,
         channel_monitor_enabled: true,
         channel_monitor_default_interval_seconds: 60,

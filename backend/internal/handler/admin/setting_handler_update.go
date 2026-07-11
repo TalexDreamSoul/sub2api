@@ -287,6 +287,7 @@ type UpdateSettingsRequest struct {
 	SubscriptionExpiryNotifyEnabled *bool                   `json:"subscription_expiry_notify_enabled"`
 	AccountQuotaNotifyEnabled       *bool                   `json:"account_quota_notify_enabled"`
 	AccountQuotaNotifyEmails        *[]dto.NotifyEmailEntry `json:"account_quota_notify_emails"`
+	AccountUsageResetTimeFormat     *string                 `json:"account_usage_reset_time_format"`
 
 	// Payment configuration (integrated into settings, full replace)
 	PaymentEnabled                   *bool    `json:"payment_enabled"`
@@ -1627,6 +1628,12 @@ func (h *SettingHandler) UpdateSettings(c *gin.Context) {
 			}
 			return previousSettings.AccountQuotaNotifyEmails
 		}(),
+		AccountUsageResetTimeFormat: func() string {
+			if req.AccountUsageResetTimeFormat != nil {
+				return service.NormalizeAccountUsageResetTimeFormat(*req.AccountUsageResetTimeFormat)
+			}
+			return previousSettings.AccountUsageResetTimeFormat
+		}(),
 		ChannelMonitorEnabled: func() bool {
 			if req.ChannelMonitorEnabled != nil {
 				return *req.ChannelMonitorEnabled
@@ -2016,6 +2023,7 @@ func (h *SettingHandler) UpdateSettings(c *gin.Context) {
 		SubscriptionExpiryNotifyEnabled:                        updatedSettings.SubscriptionExpiryNotifyEnabled,
 		AccountQuotaNotifyEnabled:                              updatedSettings.AccountQuotaNotifyEnabled,
 		AccountQuotaNotifyEmails:                               dto.NotifyEmailEntriesFromService(updatedSettings.AccountQuotaNotifyEmails),
+		AccountUsageResetTimeFormat:                            updatedSettings.AccountUsageResetTimeFormat,
 		PaymentEnabled:                                         updatedPaymentCfg.Enabled,
 		PaymentMinAmount:                                       updatedPaymentCfg.MinAmount,
 		PaymentMaxAmount:                                       updatedPaymentCfg.MaxAmount,

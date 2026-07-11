@@ -284,6 +284,7 @@ type SystemSettings struct {
 	SubscriptionExpiryNotifyEnabled bool               `json:"subscription_expiry_notify_enabled"`
 	AccountQuotaNotifyEnabled       bool               `json:"account_quota_notify_enabled"`
 	AccountQuotaNotifyEmails        []NotifyEmailEntry `json:"account_quota_notify_emails"`
+	AccountUsageResetTimeFormat     string             `json:"account_usage_reset_time_format"`
 
 	// Channel Monitor feature switch
 	ChannelMonitorEnabled                bool `json:"channel_monitor_enabled"`
@@ -368,6 +369,7 @@ type PublicSettings struct {
 	ServerUTCOffset             string  `json:"server_utc_offset"`
 	BalanceLowNotifyEnabled     bool    `json:"balance_low_notify_enabled"`
 	AccountQuotaNotifyEnabled   bool    `json:"account_quota_notify_enabled"`
+	AccountUsageResetTimeFormat string  `json:"account_usage_reset_time_format"`
 	BalanceLowNotifyThreshold   float64 `json:"balance_low_notify_threshold"`
 	BalanceLowNotifyRechargeURL string  `json:"balance_low_notify_recharge_url"`
 

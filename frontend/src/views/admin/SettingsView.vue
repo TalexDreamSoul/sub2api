@@ -1737,6 +1737,7 @@
                   </div>
                 </div>
               </div>
+
             </div>
           </div>
 
@@ -5249,6 +5250,18 @@
                 </div>
               </div>
 
+              <div class="border-t border-gray-100 pt-4 dark:border-dark-700">
+                <label class="mb-2 block text-sm font-medium text-gray-700 dark:text-gray-300">
+                  {{ t("admin.settings.site.accountResetTimeFormat") }}
+                </label>
+                <select v-model="form.account_usage_reset_time_format" class="input max-w-sm">
+                  <option value="full">{{ t("admin.settings.site.accountResetTimeFormatOptions.full") }}</option>
+                  <option value="short">{{ t("admin.settings.site.accountResetTimeFormatOptions.short") }}</option>
+                  <option value="localized">{{ t("admin.settings.site.accountResetTimeFormatOptions.localized") }}</option>
+                  <option value="countdown_only">{{ t("admin.settings.site.accountResetTimeFormatOptions.countdownOnly") }}</option>
+                </select>
+              </div>
+
               <!-- Custom Endpoints -->
               <div>
                 <label
@@ -8447,6 +8460,7 @@ const form = reactive<SettingsForm>({
   subscription_expiry_notify_enabled: true,
   account_quota_notify_enabled: false,
   account_quota_notify_emails: [] as NotifyEmailEntry[],
+  account_usage_reset_time_format: "full" as "full" | "short" | "localized" | "countdown_only",
   // Channel Monitor feature switch
   channel_monitor_enabled: true,
   channel_monitor_default_interval_seconds: 60,
@@ -9807,6 +9821,7 @@ async function saveSettings() {
       account_quota_notify_emails: (
         form.account_quota_notify_emails || []
       ).filter((e) => e.email.trim() !== ""),
+      account_usage_reset_time_format: form.account_usage_reset_time_format,
       // Channel Monitor feature switch
       channel_monitor_enabled: form.channel_monitor_enabled,
       channel_monitor_default_interval_seconds:

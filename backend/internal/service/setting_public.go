@@ -218,6 +218,7 @@ func (s *SettingService) GetPublicSettings(ctx context.Context) (*PublicSettings
 		SettingKeyBalanceLowNotifyThreshold,
 		SettingKeyBalanceLowNotifyRechargeURL,
 		SettingKeyAccountQuotaNotifyEnabled,
+		SettingKeyAccountUsageResetTimeFormat,
 		SettingKeyChannelMonitorEnabled,
 		SettingKeyChannelMonitorDefaultIntervalSeconds,
 		SettingKeyAvailableChannelsEnabled,
@@ -332,6 +333,7 @@ func (s *SettingService) GetPublicSettings(ctx context.Context) (*PublicSettings
 		GoogleOAuthEnabled:               googleEnabled,
 		BalanceLowNotifyEnabled:          settings[SettingKeyBalanceLowNotifyEnabled] == "true",
 		AccountQuotaNotifyEnabled:        settings[SettingKeyAccountQuotaNotifyEnabled] == "true",
+		AccountUsageResetTimeFormat:      NormalizeAccountUsageResetTimeFormat(settings[SettingKeyAccountUsageResetTimeFormat]),
 		BalanceLowNotifyThreshold:        balanceLowNotifyThreshold,
 		BalanceLowNotifyRechargeURL:      settings[SettingKeyBalanceLowNotifyRechargeURL],
 
@@ -494,6 +496,7 @@ type PublicSettingsInjectionPayload struct {
 	ServerUTCOffset             string  `json:"server_utc_offset"`
 	BalanceLowNotifyEnabled     bool    `json:"balance_low_notify_enabled"`
 	AccountQuotaNotifyEnabled   bool    `json:"account_quota_notify_enabled"`
+	AccountUsageResetTimeFormat string  `json:"account_usage_reset_time_format"`
 	BalanceLowNotifyThreshold   float64 `json:"balance_low_notify_threshold"`
 	BalanceLowNotifyRechargeURL string  `json:"balance_low_notify_recharge_url"`
 
@@ -563,6 +566,7 @@ func (s *SettingService) GetPublicSettingsForInjection(ctx context.Context) (any
 		ServerUTCOffset:                  timezone.UTCOffset(),
 		BalanceLowNotifyEnabled:          settings.BalanceLowNotifyEnabled,
 		AccountQuotaNotifyEnabled:        settings.AccountQuotaNotifyEnabled,
+		AccountUsageResetTimeFormat:      NormalizeAccountUsageResetTimeFormat(settings.AccountUsageResetTimeFormat),
 		BalanceLowNotifyThreshold:        settings.BalanceLowNotifyThreshold,
 		BalanceLowNotifyRechargeURL:      settings.BalanceLowNotifyRechargeURL,
 

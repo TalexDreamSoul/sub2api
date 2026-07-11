@@ -670,6 +670,7 @@ export interface SystemSettings {
   subscription_expiry_notify_enabled: boolean;
   account_quota_notify_enabled: boolean;
   account_quota_notify_emails: NotifyEmailEntry[];
+  account_usage_reset_time_format: 'full' | 'short' | 'localized' | 'countdown_only';
 
   // Channel Monitor feature switch
   channel_monitor_enabled: boolean;
@@ -953,6 +954,7 @@ export interface UpdateSettingsRequest {
   subscription_expiry_notify_enabled?: boolean;
   account_quota_notify_enabled?: boolean;
   account_quota_notify_emails?: NotifyEmailEntry[];
+  account_usage_reset_time_format?: 'full' | 'short' | 'localized' | 'countdown_only';
 
   // Channel Monitor feature switch
   channel_monitor_enabled?: boolean;

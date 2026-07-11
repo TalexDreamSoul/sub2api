@@ -1,19 +1,24 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { mount } from '@vue/test-utils'
+import { createPinia, setActivePinia } from 'pinia'
+import { ref } from 'vue'
 import UsageProgressBar from '../UsageProgressBar.vue'
+import { useAppStore } from '@/stores/app'
 
 vi.mock('vue-i18n', async () => {
   const actual = await vi.importActual<typeof import('vue-i18n')>('vue-i18n')
   return {
     ...actual,
     useI18n: () => ({
-      t: (key: string) => key
+      t: (key: string) => key,
+      locale: ref('en-US')
     })
   }
 })
 
 describe('UsageProgressBar', () => {
   beforeEach(() => {
+    setActivePinia(createPinia())
     vi.useFakeTimers()
     vi.setSystemTime(new Date('2026-03-17T00:00:00Z'))
   })
@@ -95,5 +100,37 @@ describe('UsageProgressBar', () => {
 
     expect(wrapper.text()).toContain('usage.resetNow')
     expect(wrapper.text()).not.toContain('usage.resetPending')
+  })
+
+  it('默认在倒计时后显示完整本地日期', () => {
+    const wrapper = mount(UsageProgressBar, {
+      props: {
+        label: '5h',
+        utilization: 20,
+        resetsAt: '2026-03-17T02:30:00Z',
+        color: 'indigo'
+      }
+    })
+
+    expect(wrapper.text()).toContain('2h 30m')
+    expect(wrapper.text()).toMatch(/2026-03-1[67] \d{2}:30/)
+  })
+
+  it('countdown_only 设置隐藏绝对日期', () => {
+    const store = useAppStore()
+    store.$patch({
+      cachedPublicSettings: { account_usage_reset_time_format: 'countdown_only' } as any
+    })
+    const wrapper = mount(UsageProgressBar, {
+      props: {
+        label: '7d',
+        utilization: 20,
+        resetsAt: '2026-03-17T02:30:00Z',
+        color: 'emerald'
+      }
+    })
+
+    expect(wrapper.text()).toContain('2h 30m')
+    expect(wrapper.text()).not.toContain('2026-03')
   })
 })

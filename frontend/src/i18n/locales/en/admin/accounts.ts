@@ -485,6 +485,14 @@ export default {
         testModeDefault: 'Default request',
         testModeCompact: 'Compact probe',
         modelRestrictionDisabledByPassthrough: 'Automatic passthrough is enabled: model whitelist/mapping will not take effect.',
+        quotaNotify: {
+          title: '5h / 7d remaining quota alerts',
+          globalDisabled: 'Global account quota alerts are disabled',
+          window: 'Quota window',
+          remainingAtMost: 'Remaining ≤',
+          addRule: 'Add alert rule',
+          invalidRules: 'Thresholds must be integers from 1 to 99, without duplicate window and threshold pairs',
+        },
       },
       grok: {
         baseUrlHint: 'Grok OAuth accounts forward to the official xAI API base URL.',

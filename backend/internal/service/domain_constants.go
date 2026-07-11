@@ -2,12 +2,18 @@ package service
 
 import (
 	"fmt"
+	"strings"
 
 	"github.com/Wei-Shaw/sub2api/internal/domain"
 )
 
 // Status constants
 const (
+	AccountUsageResetTimeFormatFull          = "full"
+	AccountUsageResetTimeFormatShort         = "short"
+	AccountUsageResetTimeFormatLocalized     = "localized"
+	AccountUsageResetTimeFormatCountdownOnly = "countdown_only"
+
 	StatusActive   = domain.StatusActive
 	StatusDisabled = domain.StatusDisabled
 	StatusError    = domain.StatusError
@@ -15,6 +21,17 @@ const (
 	StatusUsed     = domain.StatusUsed
 	StatusExpired  = domain.StatusExpired
 )
+
+func NormalizeAccountUsageResetTimeFormat(value string) string {
+	switch strings.TrimSpace(value) {
+	case AccountUsageResetTimeFormatShort,
+		AccountUsageResetTimeFormatLocalized,
+		AccountUsageResetTimeFormatCountdownOnly:
+		return strings.TrimSpace(value)
+	default:
+		return AccountUsageResetTimeFormatFull
+	}
+}
 
 // Role constants
 const (
@@ -531,8 +548,9 @@ const (
 	SettingKeySubscriptionExpiryNotifyEnabled = "subscription_expiry_notify_enabled" // 订阅到期提醒全局开关，默认开启
 
 	// 账号限额通知
-	SettingKeyAccountQuotaNotifyEnabled = "account_quota_notify_enabled" // 全局开关
-	SettingKeyAccountQuotaNotifyEmails  = "account_quota_notify_emails"  // 管理员通知邮箱列表（JSON 数组）
+	SettingKeyAccountQuotaNotifyEnabled   = "account_quota_notify_enabled"    // 全局开关
+	SettingKeyAccountQuotaNotifyEmails    = "account_quota_notify_emails"     // 管理员通知邮箱列表（JSON 数组）
+	SettingKeyAccountUsageResetTimeFormat = "account_usage_reset_time_format" // 账号配额重置时间展示格式
 
 	// Web Search Emulation
 	SettingKeyWebSearchEmulationConfig = "web_search_emulation_config" // JSON 配置

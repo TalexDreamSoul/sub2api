@@ -447,6 +447,7 @@ func (s *SettingService) buildSystemSettingsUpdates(ctx context.Context, setting
 	updates[SettingKeySubscriptionExpiryNotifyEnabled] = strconv.FormatBool(settings.SubscriptionExpiryNotifyEnabled)
 	updates[SettingKeyAccountQuotaNotifyEnabled] = strconv.FormatBool(settings.AccountQuotaNotifyEnabled)
 	updates[SettingKeyAccountQuotaNotifyEmails] = MarshalNotifyEmails(settings.AccountQuotaNotifyEmails)
+	updates[SettingKeyAccountUsageResetTimeFormat] = NormalizeAccountUsageResetTimeFormat(settings.AccountUsageResetTimeFormat)
 
 	// 系统全局 platform quota：整体替换语义（null/缺省 = 不限制）。
 	if settings.DefaultPlatformQuotas != nil {

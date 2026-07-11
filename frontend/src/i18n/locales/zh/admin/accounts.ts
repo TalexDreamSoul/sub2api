@@ -583,6 +583,14 @@ export default {
         testModeDefault: '常规请求',
         testModeCompact: 'Compact 探测',
         modelRestrictionDisabledByPassthrough: '已开启自动透传：模型白名单/映射不会生效。',
+        quotaNotify: {
+          title: '5h / 7d 剩余配额提醒',
+          globalDisabled: '全局账号配额提醒未启用',
+          window: '配额窗口',
+          remainingAtMost: '剩余 ≤',
+          addRule: '添加提醒规则',
+          invalidRules: '提醒规则必须为 1-99 的整数，且不能存在重复的窗口和阈值',
+        },
       },
       grok: {
         baseUrlHint: 'Grok OAuth 账号会转发到官方 xAI API Base URL。',

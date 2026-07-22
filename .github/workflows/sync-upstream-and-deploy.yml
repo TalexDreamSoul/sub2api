@@ -1,0 +1,404 @@
+name: Sync upstream and deploy
+
+on:
+  schedule:
+    # Run once per day, off the top of the hour to avoid schedule congestion.
+    - cron: '17 16 * * *'
+  workflow_dispatch:
+    inputs:
+      force_deploy:
+        description: Rebuild and deploy the current main commit when upstream has no new commits
+        required: false
+        default: false
+        type: boolean
+      dry_run:
+        description: Build, test, and run production preflight without transferring or restarting anything
+        required: false
+        default: false
+        type: boolean
+      deploy_current_main:
+        description: Deploy the current fork main without fetching or merging newer upstream commits
+        required: false
+        default: false
+        type: boolean
+
+permissions:
+  contents: write
+
+concurrency:
+  group: sub2api-upstream-sync-deploy
+  cancel-in-progress: false
+
+env:
+  DEFAULT_BRANCH: main
+  UPSTREAM_REPOSITORY: Wei-Shaw/sub2api
+  DEPLOY_HOST: ${{ vars.SUB2API_DEPLOY_HOST || '43.130.1.35' }}
+  DEPLOY_PORT: ${{ vars.SUB2API_DEPLOY_SSH_PORT || '443' }}
+  DEPLOY_USER: ${{ vars.SUB2API_DEPLOY_USER || 'root' }}
+  DEPLOY_PATH: ${{ vars.SUB2API_DEPLOY_PATH || '/opt/sub2api' }}
+
+jobs:
+  sync-test-release:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Check out fork main
+        uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+          ref: ${{ env.DEFAULT_BRANCH }}
+
+      - name: Configure Git identity
+        run: |
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+
+      - name: Fetch and merge upstream when it is ahead
+        id: source
+        env:
+          FORCE_DEPLOY: ${{ inputs.force_deploy || 'false' }}
+          DEPLOY_CURRENT_MAIN: ${{ inputs.deploy_current_main || 'false' }}
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          if [ "$DEPLOY_CURRENT_MAIN" = 'true' ]; then
+            echo 'has_update=false' >> "$GITHUB_OUTPUT"
+            echo 'should_release=true' >> "$GITHUB_OUTPUT"
+            echo "source_sha=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          git remote add upstream "https://github.com/${UPSTREAM_REPOSITORY}.git"
+          git fetch --no-tags upstream "${DEFAULT_BRANCH}"
+
+          upstream_ref="upstream/${DEFAULT_BRANCH}"
+          upstream_sha="$(git rev-parse "$upstream_ref")"
+          echo "upstream_sha=${upstream_sha}" >> "$GITHUB_OUTPUT"
+
+          if git merge-base --is-ancestor "$upstream_ref" HEAD; then
+            echo 'has_update=false' >> "$GITHUB_OUTPUT"
+            if [ "$FORCE_DEPLOY" = 'true' ]; then
+              echo 'should_release=true' >> "$GITHUB_OUTPUT"
+              echo "source_sha=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
+            else
+              echo 'should_release=false' >> "$GITHUB_OUTPUT"
+            fi
+            exit 0
+          fi
+
+          if ! git merge --no-ff --no-edit "$upstream_ref"; then
+            echo 'Upstream merge conflict. Fork main was left unchanged.' >&2
+            exit 1
+          fi
+
+          echo 'has_update=true' >> "$GITHUB_OUTPUT"
+          echo 'should_release=true' >> "$GITHUB_OUTPUT"
+          echo "source_sha=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
+
+      - name: Validate deployment configuration
+        if: steps.source.outputs.should_release == 'true'
+        env:
+          DEPLOY_SSH_KEY: ${{ secrets.SUB2API_DEPLOY_SSH_KEY }}
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          case "$DEPLOY_PATH" in
+            /opt/sub2api) ;;
+            *) echo 'SUB2API_DEPLOY_PATH must be /opt/sub2api for the existing systemd service.' >&2; exit 1 ;;
+          esac
+
+          if [ -z "$DEPLOY_SSH_KEY" ]; then
+            echo 'Set SUB2API_DEPLOY_SSH_KEY before releasing.' >&2
+            exit 1
+          fi
+
+      - name: Set up Go
+        if: steps.source.outputs.should_release == 'true'
+        uses: actions/setup-go@v6
+        with:
+          go-version-file: backend/go.mod
+          check-latest: false
+          cache: true
+          cache-dependency-path: backend/go.sum
+
+      - name: Verify Go version
+        if: steps.source.outputs.should_release == 'true'
+        run: go version | grep -q 'go1.26.5'
+
+      - name: Run backend tests
+        if: steps.source.outputs.should_release == 'true'
+        working-directory: backend
+        run: |
+          make test-unit
+          make test-integration
+
+      - name: Run Go linter
+        if: steps.source.outputs.should_release == 'true'
+        uses: golangci/golangci-lint-action@v9
+        with:
+          version: v2.9
+          args: --timeout=30m
+          working-directory: backend
+
+      - name: Set up pnpm
+        if: steps.source.outputs.should_release == 'true'
+        uses: pnpm/action-setup@v6
+        with:
+          version: 9
+
+      - name: Set up Node.js
+        if: steps.source.outputs.should_release == 'true'
+        uses: actions/setup-node@v6
+        with:
+          node-version: '20'
+          cache: pnpm
+          cache-dependency-path: frontend/pnpm-lock.yaml
+
+      - name: Run frontend checks
+        if: steps.source.outputs.should_release == 'true'
+        working-directory: frontend
+        run: |
+          pnpm install --frozen-lockfile
+          cd ..
+          make test-frontend
+
+      - name: Build Linux release binary
+        if: steps.source.outputs.should_release == 'true'
+        id: binary
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          make build
+          install -m 755 backend/bin/server "$RUNNER_TEMP/sub2api"
+          echo "sha256=$(sha256sum "$RUNNER_TEMP/sub2api" | awk '{print $1}')" >> "$GITHUB_OUTPUT"
+
+      - name: Push tested merge to fork main
+        if: steps.source.outputs.has_update == 'true'
+        run: git push origin "HEAD:refs/heads/${DEFAULT_BRANCH}"
+
+      - name: Configure SSH
+        if: steps.source.outputs.should_release == 'true'
+        env:
+          DEPLOY_SSH_KEY: ${{ secrets.SUB2API_DEPLOY_SSH_KEY }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          install -d -m 700 ~/.ssh
+          printf '%s\n' "$DEPLOY_SSH_KEY" > ~/.ssh/id_ed25519
+          chmod 600 ~/.ssh/id_ed25519
+          cat > ~/.ssh/known_hosts <<'EOF'
+          43.130.1.35 ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIPHKaMazQeZq6MVWYR5Lkm7YIQ1cTtTNIi5hkkrln14+
+          [43.130.1.35]:443 ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIPHKaMazQeZq6MVWYR5Lkm7YIQ1cTtTNIi5hkkrln14+
+          EOF
+
+          target="${DEPLOY_USER}@${DEPLOY_HOST}"
+          for attempt in $(seq 1 12); do
+            if ssh -p "$DEPLOY_PORT" \
+              -o BatchMode=yes \
+              -o StrictHostKeyChecking=yes \
+              -o ControlMaster=yes \
+              -o ControlPath=~/.ssh/sub2api-%C \
+              -o ControlPersist=20m \
+              -o ServerAliveInterval=10 \
+              -o ServerAliveCountMax=3 \
+              -MNf "$target"; then
+              exit 0
+            fi
+            sleep 5
+          done
+          echo 'Unable to establish a persistent SSH control connection.' >&2
+          exit 1
+
+      - name: Preflight production without changing services
+        if: steps.source.outputs.should_release == 'true'
+        shell: bash
+        run: |
+          set -euo pipefail
+          target="${DEPLOY_USER}@${DEPLOY_HOST}"
+          ssh_options=(-p "$DEPLOY_PORT" -o BatchMode=yes -o StrictHostKeyChecking=yes -o ControlMaster=auto -o ControlPath=~/.ssh/sub2api-%C -o ControlPersist=20m)
+
+          ssh "${ssh_options[@]}" "$target" bash -s -- "$DEPLOY_PATH" <<'REMOTE'
+          set -euo pipefail
+
+          deploy_path="$1"
+          if [ "$deploy_path" != '/opt/sub2api' ]; then
+            echo 'Refusing to inspect outside /opt/sub2api.' >&2
+            exit 1
+          fi
+          if ! systemctl is-active --quiet sub2api.service; then
+            echo 'sub2api.service is not active.' >&2
+            exit 1
+          fi
+          curl --fail --silent --show-error --max-time 5 http://127.0.0.1:8080/health >/dev/null
+
+          free_kb="$(df -Pk "$deploy_path" | awk 'NR == 2 {print $4}')"
+          if [ -z "$free_kb" ] || [ "$free_kb" -lt 2097152 ]; then
+            echo 'Less than 2 GiB is free on the deployment filesystem.' >&2
+            exit 1
+          fi
+
+          find_sub2api_postgres() {
+            local container db_user candidate_count=0
+            while IFS= read -r container; do
+              [ -n "$container" ] || continue
+              db_user="$(docker inspect --format '{{range .Config.Env}}{{println .}}{{end}}' "$container" | awk -F= '$1 == "POSTGRES_USER" {print $2; exit}')"
+              db_user="${db_user:-postgres}"
+              if docker exec "$container" psql -U "$db_user" -d sub2api -Atqc 'SELECT 1' 2>/dev/null | grep -qx 1; then
+                candidate_count=$((candidate_count + 1))
+                SUB2API_POSTGRES_CONTAINER="$container"
+                SUB2API_POSTGRES_USER="$db_user"
+              fi
+            done < <(docker ps --format '{{.Names}} {{.Image}}' | awk 'tolower($0) ~ /postgres/ {print $1}')
+            if [ "$candidate_count" -ne 1 ]; then
+              echo "Expected exactly one PostgreSQL container with the sub2api database; found $candidate_count." >&2
+              return 1
+            fi
+          }
+
+          command -v docker >/dev/null
+          find_sub2api_postgres
+          db_size="$(docker exec "$SUB2API_POSTGRES_CONTAINER" psql -U "$SUB2API_POSTGRES_USER" -d sub2api -Atqc "SELECT pg_database_size('sub2api')")"
+          long_transactions="$(docker exec "$SUB2API_POSTGRES_CONTAINER" psql -U "$SUB2API_POSTGRES_USER" -d sub2api -Atqc "SELECT count(*) FROM pg_stat_activity WHERE datname = 'sub2api' AND xact_start IS NOT NULL AND now() - xact_start > interval '5 minutes'")"
+          blocked_sessions="$(docker exec "$SUB2API_POSTGRES_CONTAINER" psql -U "$SUB2API_POSTGRES_USER" -d sub2api -Atqc "SELECT count(*) FROM pg_stat_activity WHERE datname = 'sub2api' AND wait_event_type = 'Lock'")"
+          latest_migration="$(docker exec "$SUB2API_POSTGRES_CONTAINER" psql -U "$SUB2API_POSTGRES_USER" -d sub2api -Atqc "SELECT COALESCE(max(filename), '') FROM schema_migrations")"
+
+          if [ "$long_transactions" -ne 0 ] || [ "$blocked_sessions" -ne 0 ]; then
+            echo "Database is busy: long_transactions=$long_transactions blocked_sessions=$blocked_sessions" >&2
+            exit 1
+          fi
+
+          echo "preflight_ok service=active health=ok free_kb=$free_kb db_size_bytes=$db_size latest_migration=$latest_migration"
+          REMOTE
+
+      - name: Transfer tested binary
+        if: steps.source.outputs.should_release == 'true' && inputs.dry_run != true
+        shell: bash
+        run: |
+          set -euo pipefail
+          target="${DEPLOY_USER}@${DEPLOY_HOST}"
+          scp_options=(-P "$DEPLOY_PORT" -o BatchMode=yes -o StrictHostKeyChecking=yes -o ControlMaster=auto -o ControlPath=~/.ssh/sub2api-%C -o ControlPersist=20m)
+
+          for attempt in $(seq 1 5); do
+            if scp "${scp_options[@]}" "$RUNNER_TEMP/sub2api" "$target:$DEPLOY_PATH/sub2api.next"; then
+              exit 0
+            fi
+            sleep 5
+          done
+          echo 'Failed to transfer the tested binary after five attempts.' >&2
+          exit 1
+
+      - name: Deploy and roll back on failed health check
+        if: steps.source.outputs.should_release == 'true' && inputs.dry_run != true
+        shell: bash
+        run: |
+          set -euo pipefail
+          target="${DEPLOY_USER}@${DEPLOY_HOST}"
+          ssh_options=(-p "$DEPLOY_PORT" -o BatchMode=yes -o StrictHostKeyChecking=yes -o ControlMaster=auto -o ControlPath=~/.ssh/sub2api-%C -o ControlPersist=20m)
+
+          ssh "${ssh_options[@]}" "$target" bash -s -- \
+            "$DEPLOY_PATH" \
+            '${{ steps.binary.outputs.sha256 }}' <<'REMOTE'
+          set -euo pipefail
+
+          deploy_path="$1"
+          expected_sha256="$2"
+          cd "$deploy_path"
+
+          if [ "$deploy_path" != '/opt/sub2api' ]; then
+            echo 'Refusing to deploy outside /opt/sub2api.' >&2
+            exit 1
+          fi
+          if ! id -u sub2api >/dev/null 2>&1; then
+            echo 'The sub2api service account is missing.' >&2
+            exit 1
+          fi
+          if ! systemctl is-active --quiet sub2api.service; then
+            echo 'sub2api.service is not active; refusing an automatic replacement.' >&2
+            exit 1
+          fi
+          if [ ! -x sub2api ] || [ ! -f sub2api.next ]; then
+            echo 'Current or replacement binary is missing.' >&2
+            exit 1
+          fi
+          if [ "$(sha256sum sub2api.next | awk '{print $1}')" != "$expected_sha256" ]; then
+            echo 'Transferred binary checksum does not match the CI artifact.' >&2
+            exit 1
+          fi
+
+          find_sub2api_postgres() {
+            local container db_user candidate_count=0
+            while IFS= read -r container; do
+              [ -n "$container" ] || continue
+              db_user="$(docker inspect --format '{{range .Config.Env}}{{println .}}{{end}}' "$container" | awk -F= '$1 == "POSTGRES_USER" {print $2; exit}')"
+              db_user="${db_user:-postgres}"
+              if docker exec "$container" psql -U "$db_user" -d sub2api -Atqc 'SELECT 1' 2>/dev/null | grep -qx 1; then
+                candidate_count=$((candidate_count + 1))
+                SUB2API_POSTGRES_CONTAINER="$container"
+                SUB2API_POSTGRES_USER="$db_user"
+              fi
+            done < <(docker ps --format '{{.Names}} {{.Image}}' | awk 'tolower($0) ~ /postgres/ {print $1}')
+            if [ "$candidate_count" -ne 1 ]; then
+              echo "Expected exactly one PostgreSQL container with the sub2api database; found $candidate_count." >&2
+              return 1
+            fi
+          }
+
+          timestamp="$(date -u +%Y%m%d%H%M%S)"
+          backup_path="$deploy_path/backups/sub2api.auto-$timestamp"
+          db_backup_path="$deploy_path/backups/sub2api-db.auto-$timestamp.dump"
+          install -d -m 700 "$deploy_path/backups"
+          find_sub2api_postgres
+
+          db_backup_tmp="${db_backup_path}.tmp"
+          trap 'rm -f "$db_backup_tmp"' EXIT
+          docker exec "$SUB2API_POSTGRES_CONTAINER" pg_dump -U "$SUB2API_POSTGRES_USER" -d sub2api -Fc > "$db_backup_tmp"
+          docker exec -i "$SUB2API_POSTGRES_CONTAINER" pg_restore -l < "$db_backup_tmp" >/dev/null
+          chmod 600 "$db_backup_tmp"
+          mv "$db_backup_tmp" "$db_backup_path"
+          trap - EXIT
+
+          free_after_backup_kb="$(df -Pk "$deploy_path" | awk 'NR == 2 {print $4}')"
+          if [ -z "$free_after_backup_kb" ] || [ "$free_after_backup_kb" -lt 8388608 ]; then
+            echo "Database backup succeeded, but less than 8 GiB remains; refusing to restart the service. Backup: $db_backup_path" >&2
+            exit 1
+          fi
+
+          cp --preserve=mode,ownership,timestamps sub2api "$backup_path"
+          echo "Created rollback backups: binary=$backup_path database=$db_backup_path"
+
+          rollback() {
+            echo 'New release failed its health check; restoring the previous binary.' >&2
+            systemctl stop sub2api.service || true
+            install -m 755 -o sub2api -g sub2api "$backup_path" "$deploy_path/sub2api"
+            systemctl start sub2api.service
+            for attempt in $(seq 1 12); do
+              if curl --fail --silent --show-error --max-time 5 http://127.0.0.1:8080/health >/dev/null; then
+                echo "Previous binary is healthy again. Database backup is available at $db_backup_path; migrations are intentionally not auto-restored." >&2
+                return 0
+              fi
+              sleep 5
+            done
+            echo "Rollback binary did not pass its health check. Database backup is available at $db_backup_path and requires a controlled restore." >&2
+            return 1
+          }
+
+          install -m 755 -o sub2api -g sub2api sub2api.next sub2api
+          rm -f sub2api.next
+          if ! systemctl restart sub2api.service; then
+            rollback
+            exit 1
+          fi
+
+          for attempt in $(seq 1 40); do
+            if curl --fail --silent --show-error --max-time 5 http://127.0.0.1:8080/health >/dev/null; then
+              exit 0
+            fi
+            sleep 5
+          done
+
+          rollback
+          exit 1
+          REMOTE

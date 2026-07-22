@@ -46,13 +46,6 @@ func writeContentModerationResponsesStreamError(c *gin.Context, decision *servic
 	return writeResponsesFailedSSE(c, contentModerationErrorCode(decision), decision.Message)
 }
 
-func (h *OpenAIGatewayHandler) checkContentModeration(c *gin.Context, reqLog *zap.Logger, apiKey *service.APIKey, subject middleware2.AuthSubject, protocol string, model string, body []byte) *service.ContentModerationDecision {
-	if h == nil || h.contentModerationService == nil {
-		return nil
-	}
-	return runContentModeration(c, reqLog, h.contentModerationService, apiKey, subject, protocol, model, body)
-}
-
 func runContentModeration(c *gin.Context, reqLog *zap.Logger, svc *service.ContentModerationService, apiKey *service.APIKey, subject middleware2.AuthSubject, protocol string, model string, body []byte) *service.ContentModerationDecision {
 	if svc == nil || c == nil || c.Request == nil {
 		return nil

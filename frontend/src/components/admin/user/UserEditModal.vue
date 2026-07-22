@@ -84,6 +84,9 @@
       </div>
     </template>
   </BaseDialog>
+
+  <!-- 角色提升为管理员时后端要求 step-up 2FA，弹出 TOTP 验证后自动重试 -->
+  <TotpStepUpDialog :controller="stepUp" />
 </template>
 
 <script setup lang="ts">
@@ -99,6 +102,8 @@ import AdminPermissionsField from '@/components/admin/user/AdminPermissionsField
 import BaseDialog from '@/components/common/BaseDialog.vue'
 import UserAttributeForm from '@/components/user/UserAttributeForm.vue'
 import Icon from '@/components/icons/Icon.vue'
+import { useStepUp, isStepUpBlocked, isStepUpCancelled, stepUpBlockReason } from '@/composables/useStepUp'
+import TotpStepUpDialog from '@/components/auth/TotpStepUpDialog.vue'
 
 const props = defineProps<{ show: boolean, user: AdminUser | null }>()
 const emit = defineEmits(['close', 'success'])
@@ -125,6 +130,8 @@ const copyPassword = async () => {
     passwordCopied.value = true; setTimeout(() => passwordCopied.value = false, 2000)
   }
 }
+const stepUp = useStepUp()
+
 const handleUpdateUser = async () => {
   if (!props.user) return
   if (!form.email.trim()) {
@@ -135,10 +142,7 @@ const handleUpdateUser = async () => {
     appStore.showError(t('admin.users.concurrencyMin'))
     return
   }
-  if (form.api_key_max_active_ips < 0) {
-    appStore.showError(t('admin.users.form.apiKeyMaxActiveIPsInvalid'))
-    return
-  }
+  const userId = props.user.id
   submitting.value = true
   try {
     const data: any = {
@@ -155,12 +159,23 @@ const handleUpdateUser = async () => {
       data.admin_permissions = normalizeAdminPermissions(form.admin_permissions)
     }
     if (form.password.trim()) data.password = form.password.trim()
-    await adminAPI.users.update(props.user.id, data)
-    if (Object.keys(form.customAttributes).length > 0) await adminAPI.userAttributes.updateUserAttributeValues(props.user.id, form.customAttributes)
+    // 提升为管理员属敏感操作：后端返回 STEP_UP_REQUIRED 时弹 TOTP 验证并重试
+    await stepUp.run(() => adminAPI.users.update(userId, data))
+    if (Object.keys(form.customAttributes).length > 0) await adminAPI.userAttributes.updateUserAttributeValues(userId, form.customAttributes)
     appStore.showSuccess(t('admin.users.userUpdated'))
     emit('success'); emit('close')
   } catch (e: any) {
-    appStore.showError(e.response?.data?.detail || t('admin.users.failedToUpdate'))
+    if (isStepUpCancelled(e)) {
+      // 用户主动取消二次验证：静默返回，表单保持打开。
+    } else if (isStepUpBlocked(e)) {
+      appStore.showError(
+        stepUpBlockReason(e) === 'STEP_UP_ADMIN_API_KEY_FORBIDDEN'
+          ? t('stepUp.adminApiKeyForbidden')
+          : t('stepUp.notEnabled')
+      )
+    } else {
+      appStore.showError(e?.message || t('admin.users.failedToUpdate'))
+    }
   } finally { submitting.value = false }
 }
 </script>

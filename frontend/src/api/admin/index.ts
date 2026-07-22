@@ -33,6 +33,7 @@ import adminPaymentAPI from './payment'
 import affiliatesAPI from './affiliates'
 import riskControlAPI from './riskControl'
 import adminComplianceAPI from './compliance'
+import auditAPI from './audit'
 import quotaStatusAPI from './quotaStatus'
 
 /**
@@ -69,6 +70,7 @@ export const adminAPI = {
   affiliates: affiliatesAPI,
   riskControl: riskControlAPI,
   compliance: adminComplianceAPI,
+  audit: auditAPI,
   quotaStatus: quotaStatusAPI
 }
 
@@ -103,12 +105,14 @@ export {
   affiliatesAPI,
   riskControlAPI,
   adminComplianceAPI,
+  auditAPI,
   quotaStatusAPI
 }
 
 export default adminAPI
 
 // Re-export types used by components
+export type { AuditLog, AuditLogQuery, AuditLogListResponse } from './audit'
 export type { BalanceHistoryItem } from './users'
 export type { ErrorPassthroughRule, CreateRuleRequest, UpdateRuleRequest } from './errorPassthrough'
 export type { BackupAgentHealth, DataManagementConfig } from './dataManagement'

@@ -73,6 +73,10 @@ func (r *contentModerationInternalAuditUserRepo) Update(ctx context.Context, use
 	return nil
 }
 
+func (r *contentModerationInternalAuditUserRepo) BatchUpdateLimits(context.Context, []int64, *int, *int) (int, error) {
+	panic("unexpected BatchUpdateLimits call")
+}
+
 func (r *contentModerationInternalAuditUserRepo) Delete(context.Context, int64) error {
 	panic("unexpected Delete call")
 }

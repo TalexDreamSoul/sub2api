@@ -7,6 +7,7 @@ import (
 	"net/http/httptest"
 	"testing"
 
+	"github.com/Wei-Shaw/sub2api/internal/config"
 	"github.com/Wei-Shaw/sub2api/internal/server/middleware"
 	"github.com/Wei-Shaw/sub2api/internal/service"
 	"github.com/gin-gonic/gin"
@@ -22,7 +23,7 @@ func setupAdminRouter() (*gin.Engine, *stubAdminService) {
 	router := gin.New()
 	adminSvc := newStubAdminService()
 
-	userHandler := NewUserHandler(adminSvc, nil, nil, nil)
+	userHandler := NewUserHandler(adminSvc, nil, nil, nil, nil, nil, nil)
 	groupHandler := NewGroupHandler(adminSvc, nil, nil)
 	proxyHandler := NewProxyHandler(adminSvc)
 	redeemHandler := NewRedeemHandler(adminSvc, nil)
@@ -229,7 +230,8 @@ func TestGroupHandlerDelegatedAdminCannotChangePrivilegedUserOverrides(t *testin
 func TestUserHandlerCreateAdminPermissionsRequiresSuperAdmin(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	adminSvc := newStubAdminService()
-	handler := NewUserHandler(adminSvc, nil, nil, nil)
+	settingService := service.NewSettingService(newTestSettingRepo(), &config.Config{})
+	handler := NewUserHandler(adminSvc, nil, nil, nil, nil, nil, settingService)
 	router := gin.New()
 	router.Use(func(c *gin.Context) {
 		c.Set(string(middleware.ContextKeyAdminPermissions), []string{service.AdminPermissionUsersWrite})
@@ -256,7 +258,7 @@ func TestUserHandlerCreateAdminPermissionsRequiresSuperAdmin(t *testing.T) {
 func TestUserHandlerCreateAdminRoleRequiresSuperAdmin(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	adminSvc := newStubAdminService()
-	handler := NewUserHandler(adminSvc, nil, nil, nil)
+	handler := NewUserHandler(adminSvc, nil, nil, nil, nil, nil, nil)
 	router := gin.New()
 	router.Use(func(c *gin.Context) {
 		c.Set(string(middleware.ContextKeyAdminPermissions), []string{service.AdminPermissionUsersWrite})
@@ -283,7 +285,7 @@ func TestUserHandlerCreateAdminRoleRequiresSuperAdmin(t *testing.T) {
 func TestUserHandlerUpdateRoleRequiresSuperAdmin(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	adminSvc := newStubAdminService()
-	handler := NewUserHandler(adminSvc, nil, nil, nil)
+	handler := NewUserHandler(adminSvc, nil, nil, nil, nil, nil, nil)
 	router := gin.New()
 	router.Use(func(c *gin.Context) {
 		c.Set(string(middleware.ContextKeyAdminPermissions), []string{service.AdminPermissionUsersWrite})
@@ -404,7 +406,7 @@ func TestUserHandlerDelegatedAdminCannotManagePrivilegedUsers(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			adminSvc := newStubAdminService()
 			adminSvc.users[0].AdminPermissions = []string{service.AdminPermissionDashboardRead}
-			handler := NewUserHandler(adminSvc, nil, nil, nil)
+			handler := NewUserHandler(adminSvc, nil, nil, nil, nil, nil, nil)
 			handler.userPlatformQuotaRepo = &privilegedGuardQuotaRepo{}
 			router := gin.New()
 			router.Use(func(c *gin.Context) {
@@ -449,7 +451,7 @@ func TestUserHandlerDelegatedAdminCannotManagePrivilegedUsers(t *testing.T) {
 func TestUserHandlerDelegatedAdminCanManageNormalUser(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	adminSvc := newStubAdminService()
-	handler := NewUserHandler(adminSvc, nil, nil, nil)
+	handler := NewUserHandler(adminSvc, nil, nil, nil, nil, nil, nil)
 	router := gin.New()
 	router.Use(func(c *gin.Context) {
 		c.Set(string(middleware.ContextKeyAdminPermissions), []string{service.AdminPermissionUsersWrite})
@@ -472,7 +474,7 @@ func TestUserHandlerBatchUpdateConcurrencyRejectsPrivilegedUserForDelegatedAdmin
 	gin.SetMode(gin.TestMode)
 	adminSvc := newStubAdminService()
 	adminSvc.users[0].Role = service.RoleAdmin
-	handler := NewUserHandler(adminSvc, nil, nil, nil)
+	handler := NewUserHandler(adminSvc, nil, nil, nil, nil, nil, nil)
 	router := gin.New()
 	router.Use(func(c *gin.Context) {
 		c.Set(string(middleware.ContextKeyAdminPermissions), []string{service.AdminPermissionUsersWrite})
@@ -491,7 +493,7 @@ func TestUserHandlerBatchUpdateConcurrencyRejectsPrivilegedUserForDelegatedAdmin
 func TestUserHandlerBatchUpdateConcurrencyAllowsNormalUserForDelegatedAdmin(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	adminSvc := newStubAdminService()
-	handler := NewUserHandler(adminSvc, nil, nil, nil)
+	handler := NewUserHandler(adminSvc, nil, nil, nil, nil, nil, nil)
 	router := gin.New()
 	router.Use(func(c *gin.Context) {
 		c.Set(string(middleware.ContextKeyAdminPermissions), []string{service.AdminPermissionUsersWrite})
@@ -511,7 +513,8 @@ func TestUserHandlerBatchUpdateConcurrencyAllowsNormalUserForDelegatedAdmin(t *t
 func TestUserHandlerCreatePassesAdminPermissionsForSuperAdmin(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	adminSvc := newStubAdminService()
-	handler := NewUserHandler(adminSvc, nil, nil, nil)
+	settingService := service.NewSettingService(newTestSettingRepo(), &config.Config{})
+	handler := NewUserHandler(adminSvc, nil, nil, nil, nil, nil, settingService)
 	router := gin.New()
 	router.Use(func(c *gin.Context) {
 		c.Set(string(middleware.ContextKeyAdminSuper), true)

@@ -81,23 +81,25 @@
       </div>
     </template>
   </BaseDialog>
+
+  <!-- 创建管理员账号时后端要求 step-up 2FA，弹出 TOTP 验证后自动重试 -->
+  <TotpStepUpDialog :controller="stepUp" />
 </template>
 
 <script setup lang="ts">
-import { computed, reactive, watch } from 'vue'
-import { useI18n } from 'vue-i18n'
-import { adminAPI } from '@/api/admin'
-import { useForm } from '@/composables/useForm'
+import { computed, reactive, ref, watch } from 'vue'
+import { useI18n } from 'vue-i18n'; import { adminAPI } from '@/api/admin'
 import { useAppStore } from '@/stores/app'
 import { useAuthStore } from '@/stores/auth'
 import { normalizeAdminPermissions } from '@/utils/adminPermissions'
 import AdminPermissionsField from '@/components/admin/user/AdminPermissionsField.vue'
 import BaseDialog from '@/components/common/BaseDialog.vue'
 import Icon from '@/components/icons/Icon.vue'
+import { useStepUp, isStepUpBlocked, isStepUpCancelled, stepUpBlockReason } from '@/composables/useStepUp'
+import TotpStepUpDialog from '@/components/auth/TotpStepUpDialog.vue'
 
 const props = defineProps<{ show: boolean }>()
-const emit = defineEmits(['close', 'success'])
-const { t } = useI18n()
+const emit = defineEmits(['close', 'success']); const { t } = useI18n()
 const appStore = useAppStore()
 const authStore = useAuthStore()
 
@@ -127,36 +129,55 @@ const validationError = () => {
   return ''
 }
 
-const { loading, submit } = useForm({
-  form,
-  submitFn: async (data) => {
-    const error = validationError()
-    if (error) {
-      appStore.showError(error)
-      return
-    }
-    const { balance: rawBalance, role, admin_permissions: rawPermissions, ...rest } = data
+const stepUp = useStepUp()
+const loading = ref(false)
+
+const submit = async () => {
+	if (loading.value) return
+	const error = validationError()
+	if (error) {
+		appStore.showError(error)
+		return
+	}
+	loading.value = true
+	try {
+		const {
+      balance: rawBalance,
+      role: selectedRole,
+      admin_permissions: rawPermissions,
+      ...rest
+    } = { ...form }
     const balance = String(rawBalance).trim()
     const payload: typeof rest & { balance?: number, role?: 'user' | 'admin', admin_permissions?: string[] } = {
       ...rest,
       email: rest.email.trim(),
       password: rest.password.trim(),
     }
-    if (balance !== '') {
-      payload.balance = Number(balance)
-    }
-    payload.concurrency = Math.max(1, Math.floor(Number(payload.concurrency) || 1))
-    payload.rpm_limit = Math.max(0, Math.floor(Number(payload.rpm_limit) || 0))
-    payload.api_key_max_active_ips = Math.max(0, Math.floor(Number(payload.api_key_max_active_ips) || 0))
-    if (isSuperAdmin.value) {
-      payload.role = role
-      payload.admin_permissions = normalizeAdminPermissions(rawPermissions)
-    }
-    await adminAPI.users.create(payload)
+		if (balance !== '') {
+			payload.balance = Number(balance)
+		}
+		if (isSuperAdmin.value) {
+			payload.role = selectedRole
+			payload.admin_permissions = normalizeAdminPermissions(rawPermissions)
+		}
+    // 创建管理员属敏感操作：后端返回 STEP_UP_REQUIRED 时弹 TOTP 验证并重试
+    await stepUp.run(() => adminAPI.users.create(payload))
     appStore.showSuccess(t('admin.users.userCreated'))
     emit('success'); emit('close')
-  },
-})
+  } catch (e: any) {
+    if (isStepUpCancelled(e)) {
+      // 用户主动取消二次验证：静默返回，表单保持打开。
+    } else if (isStepUpBlocked(e)) {
+      appStore.showError(
+        stepUpBlockReason(e) === 'STEP_UP_ADMIN_API_KEY_FORBIDDEN'
+          ? t('stepUp.adminApiKeyForbidden')
+          : t('stepUp.notEnabled')
+      )
+    } else {
+      appStore.showError(e?.message || t('admin.users.failedToCreate'))
+    }
+  } finally { loading.value = false }
+}
 
 watch(() => props.show, (v) => { if(v) Object.assign(form, { email: '', password: '', username: '', notes: '', role: 'user', balance: '', concurrency: 1, rpm_limit: 0, api_key_max_active_ips: 0, api_key_max_active_ips_visible: false, admin_permissions: [] }) })
 

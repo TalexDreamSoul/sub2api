@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"net/http"
 	"strings"
 	"time"
 
@@ -138,6 +139,14 @@ func (s *adminServiceImpl) CreateGroup(ctx context.Context, input *CreateGroupIn
 	if platform == "" {
 		platform = PlatformAnthropic
 	}
+	maxReasoningEffort, err := normalizeMaxReasoningEffortForPlatform(platform, input.MaxReasoningEffort)
+	if err != nil {
+		return nil, infraerrors.Newf(http.StatusBadRequest, "INVALID_MAX_REASONING_EFFORT", "%v", err)
+	}
+	reasoningEffortMappings, err := NormalizeReasoningEffortMappings(platform, input.ReasoningEffortMappings)
+	if err != nil {
+		return nil, infraerrors.Newf(http.StatusBadRequest, "INVALID_REASONING_EFFORT_MAPPING", "%v", err)
+	}
 
 	subscriptionType := input.SubscriptionType
 	if subscriptionType == "" {
@@ -156,6 +165,7 @@ func (s *adminServiceImpl) CreateGroup(ctx context.Context, input *CreateGroupIn
 	videoPrice480P := normalizePrice(input.VideoPrice480P)
 	videoPrice720P := normalizePrice(input.VideoPrice720P)
 	videoPrice1080P := normalizePrice(input.VideoPrice1080P)
+	webSearchPricePerCall := normalizePrice(input.WebSearchPricePerCall)
 	imageRateMultiplier := 1.0
 	if input.ImageRateMultiplier != nil {
 		if *input.ImageRateMultiplier < 0 {
@@ -287,6 +297,7 @@ func (s *adminServiceImpl) CreateGroup(ctx context.Context, input *CreateGroupIn
 		VideoPrice480P:                  videoPrice480P,
 		VideoPrice720P:                  videoPrice720P,
 		VideoPrice1080P:                 videoPrice1080P,
+		WebSearchPricePerCall:           webSearchPricePerCall,
 		ClaudeCodeOnly:                  input.ClaudeCodeOnly,
 		FallbackGroupID:                 input.FallbackGroupID,
 		FallbackGroupIDOnInvalidRequest: fallbackOnInvalidRequest,
@@ -300,8 +311,11 @@ func (s *adminServiceImpl) CreateGroup(ctx context.Context, input *CreateGroupIn
 		MessagesDispatchModelConfig:     normalizeOpenAIMessagesDispatchModelConfig(input.MessagesDispatchModelConfig),
 		ModelsListConfig:                normalizeGroupModelsListConfig(input.ModelsListConfig),
 		RPMLimit:                        input.RPMLimit,
+		MaxReasoningEffort:              maxReasoningEffort,
+		ReasoningEffortMappings:         reasoningEffortMappings,
 	}
 	sanitizeGroupMessagesDispatchFields(group)
+	sanitizeGroupReasoningEffortPolicy(group)
 	if err := s.groupRepo.Create(ctx, group); err != nil {
 		return nil, err
 	}
@@ -543,6 +557,9 @@ func (s *adminServiceImpl) UpdateGroup(ctx context.Context, id int64, input *Upd
 	if input.VideoPrice1080P != nil {
 		group.VideoPrice1080P = normalizePrice(input.VideoPrice1080P)
 	}
+	if input.WebSearchPricePerCall != nil {
+		group.WebSearchPricePerCall = normalizePrice(input.WebSearchPricePerCall)
+	}
 
 	// Claude Code 客户端限制
 	if input.ClaudeCodeOnly != nil {
@@ -613,7 +630,22 @@ func (s *adminServiceImpl) UpdateGroup(ctx context.Context, id int64, input *Upd
 	if input.RPMLimit != nil {
 		group.RPMLimit = *input.RPMLimit
 	}
+	if input.MaxReasoningEffort != nil {
+		maxReasoningEffort, err := normalizeMaxReasoningEffortForPlatform(group.Platform, *input.MaxReasoningEffort)
+		if err != nil {
+			return nil, infraerrors.Newf(http.StatusBadRequest, "INVALID_MAX_REASONING_EFFORT", "%v", err)
+		}
+		group.MaxReasoningEffort = maxReasoningEffort
+	}
+	if input.ReasoningEffortMappings != nil {
+		reasoningEffortMappings, err := NormalizeReasoningEffortMappings(group.Platform, *input.ReasoningEffortMappings)
+		if err != nil {
+			return nil, infraerrors.Newf(http.StatusBadRequest, "INVALID_REASONING_EFFORT_MAPPING", "%v", err)
+		}
+		group.ReasoningEffortMappings = reasoningEffortMappings
+	}
 	sanitizeGroupMessagesDispatchFields(group)
+	sanitizeGroupReasoningEffortPolicy(group)
 
 	if err := s.groupRepo.Update(ctx, group); err != nil {
 		return nil, err

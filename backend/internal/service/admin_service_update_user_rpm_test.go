@@ -14,9 +14,11 @@ import (
 type rpmUserRepoStub struct {
 	*userRepoStub
 	lastUpdated *User
+	lastFields  UserUpdateFields
 }
 
-func (s *rpmUserRepoStub) Update(_ context.Context, user *User) error {
+func (s *rpmUserRepoStub) Update(_ context.Context, user *User, fields UserUpdateFields) error {
+	s.lastFields = fields
 	if user == nil {
 		return nil
 	}
@@ -66,4 +68,26 @@ func TestAdminService_UpdateUser_NoInvalidateWhenRPMLimitUnchanged(t *testing.T)
 	})
 	require.NoError(t, err)
 	require.Empty(t, invalidator.userIDs, "只改 username 不应触发认证缓存失效")
+}
+
+func TestAdminService_UpdateUser_DeclaresAdminPermissionsSideTable(t *testing.T) {
+	base := &userRepoStub{user: &User{ID: 42, Email: "admin@example.com", Role: RoleAdmin}}
+	repo := &rpmUserRepoStub{userRepoStub: base}
+	svc := &adminServiceImpl{userRepo: repo, redeemCodeRepo: &redeemRepoStub{}}
+
+	permissions := []string{AdminPermissionUsersWrite}
+	_, err := svc.UpdateUser(context.Background(), 42, &UpdateUserInput{AdminPermissions: &permissions})
+	require.NoError(t, err)
+	require.Equal(t, UserUpdateFields{AdminPermissions: true}, repo.lastFields)
+}
+
+func TestAdminService_UpdateUser_DeclaresAPIKeyIPPolicySideTable(t *testing.T) {
+	base := &userRepoStub{user: &User{ID: 42, Email: "u@example.com", Role: RoleUser}}
+	repo := &rpmUserRepoStub{userRepoStub: base}
+	svc := &adminServiceImpl{userRepo: repo, redeemCodeRepo: &redeemRepoStub{}}
+
+	maxActiveIPs := 3
+	_, err := svc.UpdateUser(context.Background(), 42, &UpdateUserInput{APIKeyMaxActiveIPs: &maxActiveIPs})
+	require.NoError(t, err)
+	require.Equal(t, UserUpdateFields{APIKeyIPPolicy: true}, repo.lastFields)
 }

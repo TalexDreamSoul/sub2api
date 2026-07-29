@@ -34,6 +34,10 @@ func (r *contentModerationInternalAuditUserRepo) Create(ctx context.Context, use
 	return nil
 }
 
+func (r *contentModerationInternalAuditUserRepo) CreateWithEmailAliasGuard(ctx context.Context, user *User) error {
+	return r.Create(ctx, user)
+}
+
 func (r *contentModerationInternalAuditUserRepo) GetByID(ctx context.Context, id int64) (*User, error) {
 	for _, user := range r.users {
 		if user.ID == id {
@@ -64,7 +68,7 @@ func (r *contentModerationInternalAuditUserRepo) GetFirstAdmin(ctx context.Conte
 	panic("unexpected GetFirstAdmin call")
 }
 
-func (r *contentModerationInternalAuditUserRepo) Update(ctx context.Context, user *User) error {
+func (r *contentModerationInternalAuditUserRepo) Update(ctx context.Context, user *User, _ UserUpdateFields) error {
 	if r.users == nil {
 		r.users = map[string]*User{}
 	}
@@ -106,6 +110,33 @@ func (r *contentModerationInternalAuditUserRepo) UpdateBalance(context.Context, 
 func (r *contentModerationInternalAuditUserRepo) DeductBalance(context.Context, int64, float64) error {
 	panic("unexpected DeductBalance call")
 }
+func (r *contentModerationInternalAuditUserRepo) AdjustBalance(ctx context.Context, id int64, delta float64) (BalanceChange, error) {
+	user, err := r.GetByID(ctx, id)
+	if err != nil {
+		return BalanceChange{}, err
+	}
+	change := BalanceChange{Old: user.Balance, New: user.Balance + delta}
+	if change.New < 0 {
+		return BalanceChange{}, ErrBalanceNegative
+	}
+	user.Balance = change.New
+	if err := r.Update(ctx, user, UserUpdateFields{}); err != nil {
+		return BalanceChange{}, err
+	}
+	return change, nil
+}
+func (r *contentModerationInternalAuditUserRepo) SetBalance(ctx context.Context, id int64, value float64) (BalanceChange, error) {
+	user, err := r.GetByID(ctx, id)
+	if err != nil {
+		return BalanceChange{}, err
+	}
+	change := BalanceChange{Old: user.Balance, New: value}
+	user.Balance = value
+	if err := r.Update(ctx, user, UserUpdateFields{}); err != nil {
+		return BalanceChange{}, err
+	}
+	return change, nil
+}
 func (r *contentModerationInternalAuditUserRepo) UpdateConcurrency(context.Context, int64, int) error {
 	panic("unexpected UpdateConcurrency call")
 }
@@ -115,9 +146,15 @@ func (r *contentModerationInternalAuditUserRepo) BatchSetConcurrency(context.Con
 func (r *contentModerationInternalAuditUserRepo) BatchAddConcurrency(context.Context, []int64, int) (int, error) {
 	panic("unexpected BatchAddConcurrency call")
 }
+func (r *contentModerationInternalAuditUserRepo) BatchUpdateLimits(context.Context, []int64, *int, *int) (int, error) {
+	panic("unexpected BatchUpdateLimits call")
+}
 func (r *contentModerationInternalAuditUserRepo) ExistsByEmail(ctx context.Context, email string) (bool, error) {
 	_, err := r.GetByEmail(ctx, email)
 	return err == nil, nil
+}
+func (r *contentModerationInternalAuditUserRepo) ExistsByEmailAlias(ctx context.Context, email string) (bool, error) {
+	return r.ExistsByEmail(ctx, email)
 }
 func (r *contentModerationInternalAuditUserRepo) RemoveGroupFromAllowedGroups(context.Context, int64) (int64, error) {
 	panic("unexpected RemoveGroupFromAllowedGroups call")
@@ -130,7 +167,7 @@ func (r *contentModerationInternalAuditUserRepo) AddGroupToAllowedGroups(ctx con
 	if !int64SliceContains(user.AllowedGroups, groupID) {
 		user.AllowedGroups = append(user.AllowedGroups, groupID)
 	}
-	return r.Update(ctx, user)
+	return r.Update(ctx, user, UserUpdateFields{AllowedGroups: true})
 }
 func (r *contentModerationInternalAuditUserRepo) RemoveGroupFromUserAllowedGroups(context.Context, int64, int64) error {
 	panic("unexpected RemoveGroupFromUserAllowedGroups call")
@@ -252,7 +289,7 @@ func (r *contentModerationInternalAuditAPIKeyRepo) GetByKey(ctx context.Context,
 func (r *contentModerationInternalAuditAPIKeyRepo) GetByKeyForAuth(ctx context.Context, key string) (*APIKey, error) {
 	return r.GetByKey(ctx, key)
 }
-func (r *contentModerationInternalAuditAPIKeyRepo) Update(ctx context.Context, key *APIKey) error {
+func (r *contentModerationInternalAuditAPIKeyRepo) Update(ctx context.Context, key *APIKey, _ APIKeyUpdateFields) error {
 	clone := *key
 	r.keys[clone.ID] = &clone
 	return nil

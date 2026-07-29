@@ -127,6 +127,47 @@ func TestQuotaStatusSnapshotHidesAccountNameAndReusesQuotaDetails(t *testing.T) 
 	require.InDelta(t, limit, *publicAccount.Dimensions[0].Limit, 0.001)
 }
 
+func TestAccountUsageServiceBuildsPassiveSnapshotsForPersistedPlatforms(t *testing.T) {
+	resetAt := time.Now().Add(time.Hour).UTC().Format(time.RFC3339)
+	usageService := &AccountUsageService{grokQuotaFetcher: NewGrokQuotaFetcher()}
+
+	openAIUsage, err := usageService.GetPassiveUsageForAccount(context.Background(), &Account{
+		ID:       21,
+		Platform: PlatformOpenAI,
+		Type:     AccountTypeOAuth,
+		Extra: map[string]any{
+			"codex_5h_used_percent":  42.5,
+			"codex_5h_reset_at":      resetAt,
+			"codex_7d_used_percent":  73.0,
+			"codex_7d_reset_at":      resetAt,
+			"codex_usage_updated_at": time.Now().Add(-time.Minute).UTC().Format(time.RFC3339),
+		},
+	})
+	require.NoError(t, err)
+	require.Equal(t, "passive", openAIUsage.Source)
+	require.NotNil(t, openAIUsage.FiveHour)
+	require.InDelta(t, 42.5, openAIUsage.FiveHour.Utilization, 0.001)
+	require.NotNil(t, openAIUsage.SevenDay)
+	require.InDelta(t, 73.0, openAIUsage.SevenDay.Utilization, 0.001)
+
+	grokUsage, err := usageService.GetPassiveUsageForAccount(context.Background(), &Account{
+		ID:       22,
+		Platform: PlatformGrok,
+		Type:     AccountTypeOAuth,
+		Extra: map[string]any{
+			grokQuotaSnapshotExtraKey: map[string]any{
+				"requests":   map[string]any{"limit": 100, "remaining": 25},
+				"updated_at": time.Now().UTC().Format(time.RFC3339),
+			},
+		},
+	})
+	require.NoError(t, err)
+	require.Equal(t, "passive", grokUsage.Source)
+	require.NotNil(t, grokUsage.GrokRequestQuota)
+	require.EqualValues(t, 100, *grokUsage.GrokRequestQuota.Limit)
+	require.EqualValues(t, 25, *grokUsage.GrokRequestQuota.Remaining)
+}
+
 func TestPublicAccountStatusDistinguishesLimitedAndUnavailable(t *testing.T) {
 	future := time.Now().Add(time.Hour)
 	limited := &Account{Status: StatusActive, Schedulable: true, RateLimitResetAt: &future}

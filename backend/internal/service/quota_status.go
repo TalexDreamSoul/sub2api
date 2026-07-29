@@ -279,7 +279,7 @@ func (s *QuotaStatusService) GetSnapshot(ctx context.Context) (QuotaStatusSnapsh
 				defer func() { <-semaphore }()
 				var usage *UsageInfo
 				if s.accountUsageService != nil {
-					usage, _ = s.accountUsageService.GetPassiveUsage(ctx, account.ID)
+					usage, _ = s.accountUsageService.GetPassiveUsageForAccount(ctx, account)
 				}
 				name := fmt.Sprintf("账号 %d", index+1)
 				if item.ShowName {

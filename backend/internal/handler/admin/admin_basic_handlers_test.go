@@ -22,7 +22,7 @@ func setupAdminRouter() (*gin.Engine, *stubAdminService) {
 	router := gin.New()
 	adminSvc := newStubAdminService()
 
-	userHandler := NewUserHandler(adminSvc, nil, nil, nil)
+	userHandler := NewUserHandler(adminSvc, nil, nil, nil, nil, nil, nil)
 	groupHandler := NewGroupHandler(adminSvc, nil, nil)
 	proxyHandler := NewProxyHandler(adminSvc)
 	redeemHandler := NewRedeemHandler(adminSvc, nil)
@@ -40,6 +40,11 @@ func setupAdminRouter() (*gin.Engine, *stubAdminService) {
 	router.GET("/api/v1/admin/groups", groupHandler.List)
 	router.GET("/api/v1/admin/groups/all", groupHandler.GetAll)
 	router.GET("/api/v1/admin/groups/:id/models-list-candidates", groupHandler.GetModelsListCandidates)
+	router.GET("/api/v1/admin/groups/:id/composite-routes", groupHandler.ListCompositeRoutes)
+	router.POST("/api/v1/admin/groups/:id/composite-routes", groupHandler.CreateCompositeRoute)
+	router.POST("/api/v1/admin/groups/:id/composite-routes/preview", groupHandler.PreviewCompositeRoute)
+	router.PUT("/api/v1/admin/groups/:id/composite-routes/:route_id", groupHandler.UpdateCompositeRoute)
+	router.DELETE("/api/v1/admin/groups/:id/composite-routes/:route_id", groupHandler.DeleteCompositeRoute)
 	router.GET("/api/v1/admin/groups/:id", groupHandler.GetByID)
 	router.POST("/api/v1/admin/groups", groupHandler.Create)
 	router.PUT("/api/v1/admin/groups/:id", groupHandler.Update)
@@ -229,7 +234,7 @@ func TestGroupHandlerDelegatedAdminCannotChangePrivilegedUserOverrides(t *testin
 func TestUserHandlerCreateAdminPermissionsRequiresSuperAdmin(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	adminSvc := newStubAdminService()
-	handler := NewUserHandler(adminSvc, nil, nil, nil)
+	handler := NewUserHandler(adminSvc, nil, nil, nil, nil, nil, nil)
 	router := gin.New()
 	router.Use(func(c *gin.Context) {
 		c.Set(string(middleware.ContextKeyAdminPermissions), []string{service.AdminPermissionUsersWrite})
@@ -256,7 +261,7 @@ func TestUserHandlerCreateAdminPermissionsRequiresSuperAdmin(t *testing.T) {
 func TestUserHandlerCreateAdminRoleRequiresSuperAdmin(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	adminSvc := newStubAdminService()
-	handler := NewUserHandler(adminSvc, nil, nil, nil)
+	handler := NewUserHandler(adminSvc, nil, nil, nil, nil, nil, nil)
 	router := gin.New()
 	router.Use(func(c *gin.Context) {
 		c.Set(string(middleware.ContextKeyAdminPermissions), []string{service.AdminPermissionUsersWrite})
@@ -283,7 +288,7 @@ func TestUserHandlerCreateAdminRoleRequiresSuperAdmin(t *testing.T) {
 func TestUserHandlerUpdateRoleRequiresSuperAdmin(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	adminSvc := newStubAdminService()
-	handler := NewUserHandler(adminSvc, nil, nil, nil)
+	handler := NewUserHandler(adminSvc, nil, nil, nil, nil, nil, nil)
 	router := gin.New()
 	router.Use(func(c *gin.Context) {
 		c.Set(string(middleware.ContextKeyAdminPermissions), []string{service.AdminPermissionUsersWrite})
@@ -404,7 +409,7 @@ func TestUserHandlerDelegatedAdminCannotManagePrivilegedUsers(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			adminSvc := newStubAdminService()
 			adminSvc.users[0].AdminPermissions = []string{service.AdminPermissionDashboardRead}
-			handler := NewUserHandler(adminSvc, nil, nil, nil)
+			handler := NewUserHandler(adminSvc, nil, nil, nil, nil, nil, nil)
 			handler.userPlatformQuotaRepo = &privilegedGuardQuotaRepo{}
 			router := gin.New()
 			router.Use(func(c *gin.Context) {
@@ -449,7 +454,7 @@ func TestUserHandlerDelegatedAdminCannotManagePrivilegedUsers(t *testing.T) {
 func TestUserHandlerDelegatedAdminCanManageNormalUser(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	adminSvc := newStubAdminService()
-	handler := NewUserHandler(adminSvc, nil, nil, nil)
+	handler := NewUserHandler(adminSvc, nil, nil, nil, nil, nil, nil)
 	router := gin.New()
 	router.Use(func(c *gin.Context) {
 		c.Set(string(middleware.ContextKeyAdminPermissions), []string{service.AdminPermissionUsersWrite})
@@ -472,7 +477,7 @@ func TestUserHandlerBatchUpdateConcurrencyRejectsPrivilegedUserForDelegatedAdmin
 	gin.SetMode(gin.TestMode)
 	adminSvc := newStubAdminService()
 	adminSvc.users[0].Role = service.RoleAdmin
-	handler := NewUserHandler(adminSvc, nil, nil, nil)
+	handler := NewUserHandler(adminSvc, nil, nil, nil, nil, nil, nil)
 	router := gin.New()
 	router.Use(func(c *gin.Context) {
 		c.Set(string(middleware.ContextKeyAdminPermissions), []string{service.AdminPermissionUsersWrite})
@@ -491,7 +496,7 @@ func TestUserHandlerBatchUpdateConcurrencyRejectsPrivilegedUserForDelegatedAdmin
 func TestUserHandlerBatchUpdateConcurrencyAllowsNormalUserForDelegatedAdmin(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	adminSvc := newStubAdminService()
-	handler := NewUserHandler(adminSvc, nil, nil, nil)
+	handler := NewUserHandler(adminSvc, nil, nil, nil, nil, nil, nil)
 	router := gin.New()
 	router.Use(func(c *gin.Context) {
 		c.Set(string(middleware.ContextKeyAdminPermissions), []string{service.AdminPermissionUsersWrite})
@@ -511,7 +516,8 @@ func TestUserHandlerBatchUpdateConcurrencyAllowsNormalUserForDelegatedAdmin(t *t
 func TestUserHandlerCreatePassesAdminPermissionsForSuperAdmin(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	adminSvc := newStubAdminService()
-	handler := NewUserHandler(adminSvc, nil, nil, nil)
+	settingSvc := service.NewSettingService(&settingHandlerRepoStub{values: map[string]string{}}, nil)
+	handler := NewUserHandler(adminSvc, nil, nil, nil, nil, nil, settingSvc)
 	router := gin.New()
 	router.Use(func(c *gin.Context) {
 		c.Set(string(middleware.ContextKeyAdminSuper), true)
@@ -590,7 +596,54 @@ func TestGroupHandlerEndpoints(t *testing.T) {
 	require.Equal(t, http.StatusOK, rec.Code)
 	require.Contains(t, rec.Body.String(), "gpt-5.5")
 
-	body, _ := json.Marshal(map[string]any{"name": "new", "platform": "anthropic", "subscription_type": "standard"})
+	rec = httptest.NewRecorder()
+	req = httptest.NewRequest(http.MethodGet, "/api/v1/admin/groups/2/composite-routes", nil)
+	router.ServeHTTP(rec, req)
+	require.Equal(t, http.StatusOK, rec.Code)
+	require.Contains(t, rec.Body.String(), "openrouter/gpt-5")
+
+	body, _ := json.Marshal(map[string]any{
+		"public_model":    "openrouter/gpt-5",
+		"match_type":      "exact",
+		"target_platform": "openai",
+		"upstream_model":  "gpt-5",
+		"endpoint":        "chat_completions",
+		"enabled":         true,
+	})
+	rec = httptest.NewRecorder()
+	req = httptest.NewRequest(http.MethodPost, "/api/v1/admin/groups/2/composite-routes", bytes.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	router.ServeHTTP(rec, req)
+	require.Equal(t, http.StatusCreated, rec.Code)
+	require.Contains(t, rec.Body.String(), "gpt-5")
+
+	body, _ = json.Marshal(map[string]any{
+		"public_model":    "openrouter/gpt-5",
+		"target_platform": "openai",
+		"upstream_model":  "gpt-5",
+		"endpoint":        "responses",
+		"enabled":         true,
+	})
+	rec = httptest.NewRecorder()
+	req = httptest.NewRequest(http.MethodPut, "/api/v1/admin/groups/2/composite-routes/1", bytes.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	router.ServeHTTP(rec, req)
+	require.Equal(t, http.StatusOK, rec.Code)
+
+	body, _ = json.Marshal(map[string]any{"model": "gpt-5", "endpoint": "responses"})
+	rec = httptest.NewRecorder()
+	req = httptest.NewRequest(http.MethodPost, "/api/v1/admin/groups/2/composite-routes/preview", bytes.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	router.ServeHTTP(rec, req)
+	require.Equal(t, http.StatusOK, rec.Code)
+	require.Contains(t, rec.Body.String(), `"source":"detector"`)
+
+	rec = httptest.NewRecorder()
+	req = httptest.NewRequest(http.MethodDelete, "/api/v1/admin/groups/2/composite-routes/1", nil)
+	router.ServeHTTP(rec, req)
+	require.Equal(t, http.StatusOK, rec.Code)
+
+	body, _ = json.Marshal(map[string]any{"name": "new", "platform": "anthropic", "subscription_type": "standard"})
 	rec = httptest.NewRecorder()
 	req = httptest.NewRequest(http.MethodPost, "/api/v1/admin/groups", bytes.NewReader(body))
 	req.Header.Set("Content-Type", "application/json")

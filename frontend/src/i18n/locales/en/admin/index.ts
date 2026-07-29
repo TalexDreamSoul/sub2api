@@ -5,6 +5,8 @@ import resources from './resources'
 import ops from './ops'
 import settings from './settings'
 import quotaStatus from './quotaStatus'
+import audit from './audit'
+import promptAudit from './promptAudit'
 
 export default {
   ...overview,
@@ -14,4 +16,6 @@ export default {
   ...ops,
   ...settings,
   ...quotaStatus,
+  ...audit,
+  ...promptAudit,
 }

@@ -1,6 +1,9 @@
 # 确保所有 SQL 迁移文件使用 LF 换行符
 backend/migrations/*.sql text eol=lf
 
+# Patch archives preserve source whitespace as evidence.
+*.patch text eol=lf whitespace=-blank-at-eol,-space-before-tab
+
 # Go 源代码文件
 *.go text eol=lf
 

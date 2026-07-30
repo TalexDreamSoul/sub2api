@@ -93,7 +93,10 @@
                   <div class="min-w-0 flex-1">
                     <div class="flex flex-wrap items-center gap-2">
                       <span class="truncate text-sm font-semibold text-gray-950 dark:text-white">{{ account.name }}</span>
-                      <span class="rounded text-[10px] px-1.5 py-0.5 font-mono font-medium bg-gray-100 text-gray-500 dark:bg-dark-700 dark:text-gray-400">
+                      <span
+                        v-if="account.type"
+                        class="rounded text-[10px] px-1.5 py-0.5 font-mono font-medium bg-gray-100 text-gray-500 dark:bg-dark-700 dark:text-gray-400"
+                      >
                         {{ account.type }}
                       </span>
                     </div>

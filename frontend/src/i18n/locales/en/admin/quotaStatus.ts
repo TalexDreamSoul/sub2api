@@ -40,6 +40,8 @@ export default {
     display: {
       title: 'Display Options',
       description: 'Control which information sections appear on the public page',
+      showAccountType: 'Show account authentication type',
+      showAccountTypeDesc: 'Display API Key, OAuth, Setup Token, and other authentication types; disabled by default',
       showRateMultiplier: 'Show billing rate',
       showRateMultiplierDesc: 'Display the billing rate multiplier tag on each account',
       showModelDistribution: 'Show model distribution',

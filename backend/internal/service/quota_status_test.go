@@ -181,11 +181,48 @@ func TestQuotaStatusSnapshotHidesAccountNameAndReusesQuotaDetails(t *testing.T) 
 	publicAccount := snapshot.Groups[0].Accounts[0]
 	require.Equal(t, "账号 1", publicAccount.Name)
 	require.NotContains(t, publicAccount.Name, "example.com")
+	require.Empty(t, publicAccount.Type)
 	require.Equal(t, "available", publicAccount.Status)
 	require.Len(t, publicAccount.Dimensions, 1)
 	require.Equal(t, "total", publicAccount.Dimensions[0].Key)
 	require.InDelta(t, used, *publicAccount.Dimensions[0].Used, 0.001)
 	require.InDelta(t, limit, *publicAccount.Dimensions[0].Limit, 0.001)
+}
+
+func TestQuotaStatusSnapshotIncludesAccountTypeOnlyWhenEnabled(t *testing.T) {
+	account := &Account{
+		ID:          19,
+		Name:        "oauth-account",
+		Platform:    PlatformOpenAI,
+		Type:        AccountTypeOAuth,
+		Status:      StatusActive,
+		Schedulable: true,
+		GroupIDs:    []int64{9},
+	}
+	config := QuotaStatusConfig{
+		Enabled: true,
+		Display: QuotaStatusDisplayConfig{ShowAccountType: true},
+		Groups: []QuotaStatusGroupConfig{{
+			GroupID:  9,
+			Accounts: []QuotaStatusAccountConfig{{AccountID: account.ID}},
+		}},
+	}
+	payload, err := json.Marshal(config)
+	require.NoError(t, err)
+	quotaService := NewQuotaStatusService(
+		&quotaStatusAdminStub{
+			groups:   map[int64]*Group{9: {ID: 9, Name: "OpenAI", Platform: PlatformOpenAI}},
+			accounts: map[int64]*Account{account.ID: account},
+		},
+		NewSettingService(&quotaStatusSettingRepo{value: string(payload)}, nil),
+		nil,
+	)
+
+	snapshot, err := quotaService.GetSnapshot(context.Background())
+	require.NoError(t, err)
+	require.Len(t, snapshot.Groups, 1)
+	require.Len(t, snapshot.Groups[0].Accounts, 1)
+	require.Equal(t, AccountTypeOAuth, snapshot.Groups[0].Accounts[0].Type)
 }
 
 func TestAccountUsageServiceBuildsPassiveSnapshotsForPersistedPlatforms(t *testing.T) {

@@ -36,6 +36,7 @@ type QuotaStatusGroupConfig struct {
 }
 
 type QuotaStatusDisplayConfig struct {
+	ShowAccountType       bool `json:"show_account_type"`
 	ShowRateMultiplier    bool `json:"show_rate_multiplier"`
 	ShowModelDistribution bool `json:"show_model_distribution"`
 	ShowDailyCurve        bool `json:"show_daily_curve"`
@@ -82,7 +83,7 @@ type QuotaStatusModelStat struct {
 type QuotaStatusAccount struct {
 	Name              string                  `json:"name"`
 	Platform          string                  `json:"platform"`
-	Type              string                  `json:"type"`
+	Type              string                  `json:"type,omitempty"`
 	Status            string                  `json:"status"`
 	RateMultiplier    float64                 `json:"rate_multiplier"`
 	Schedulable       bool                    `json:"schedulable"`
@@ -128,6 +129,7 @@ func defaultQuotaStatusConfig() QuotaStatusConfig {
 		Description: "查看各渠道账号的额度使用情况。",
 		AccessMode:  QuotaStatusAccessModePublic,
 		Display: QuotaStatusDisplayConfig{
+			ShowAccountType:       false,
 			ShowRateMultiplier:    true,
 			ShowModelDistribution: true,
 			ShowDailyCurve:        true,
@@ -379,12 +381,14 @@ func (s *QuotaStatusService) getSnapshot(ctx context.Context, visibleGroupIDs ma
 				result := &QuotaStatusAccount{
 					Name:           name,
 					Platform:       account.Platform,
-					Type:           account.Type,
 					Status:         publicAccountStatus(account),
 					RateMultiplier: rateMult,
 					Schedulable:    account.Schedulable,
 					Priority:       account.Priority,
 					Dimensions:     buildQuotaStatusDimensions(account, usage),
+				}
+				if config.Display.ShowAccountType {
+					result.Type = account.Type
 				}
 				// 每日调度曲线
 				if config.Display.ShowDailyCurve {

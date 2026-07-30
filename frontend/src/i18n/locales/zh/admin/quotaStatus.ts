@@ -29,6 +29,8 @@ export default {
     display: {
       title: '展示配置',
       description: '控制公开页面上展示哪些信息模块',
+      showAccountType: '展示账号认证类型',
+      showAccountTypeDesc: '显示 API Key、OAuth、Setup Token 等认证类型；默认关闭',
       showRateMultiplier: '展示计费倍率',
       showRateMultiplierDesc: '在每个账号上显示其计费倍率标签',
       showModelDistribution: '展示模型分布',

@@ -67,6 +67,13 @@
         <div class="grid gap-4 p-5 sm:grid-cols-2 sm:p-6">
           <div class="flex items-center justify-between rounded-lg border border-gray-200 p-4 dark:border-dark-700">
             <div>
+              <div class="text-sm font-medium text-gray-900 dark:text-white">{{ t('admin.quotaStatus.display.showAccountType') }}</div>
+              <div class="text-xs text-gray-500 dark:text-gray-400">{{ t('admin.quotaStatus.display.showAccountTypeDesc') }}</div>
+            </div>
+            <Toggle v-model="form.display.show_account_type" />
+          </div>
+          <div class="flex items-center justify-between rounded-lg border border-gray-200 p-4 dark:border-dark-700">
+            <div>
               <div class="text-sm font-medium text-gray-900 dark:text-white">{{ t('admin.quotaStatus.display.showRateMultiplier') }}</div>
               <div class="text-xs text-gray-500 dark:text-gray-400">{{ t('admin.quotaStatus.display.showRateMultiplierDesc') }}</div>
             </div>
@@ -280,6 +287,7 @@ const form = reactive({
   description: '',
   access_mode: 'public' as QuotaStatusAccessMode,
   display: {
+    show_account_type: false,
     show_rate_multiplier: true,
     show_model_distribution: true,
     show_daily_curve: true,
@@ -360,6 +368,7 @@ async function load() {
     form.description = config.description
     form.access_mode = config.access_mode || 'public'
     if (config.display) {
+      form.display.show_account_type = config.display.show_account_type ?? false
       form.display.show_rate_multiplier = config.display.show_rate_multiplier ?? true
       form.display.show_model_distribution = config.display.show_model_distribution ?? true
       form.display.show_daily_curve = config.display.show_daily_curve ?? true
@@ -407,6 +416,7 @@ function toConfig(): QuotaStatusConfig {
     description: form.description.trim(),
     access_mode: form.access_mode,
     display: {
+      show_account_type: form.display.show_account_type,
       show_rate_multiplier: form.display.show_rate_multiplier,
       show_model_distribution: form.display.show_model_distribution,
       show_daily_curve: form.display.show_daily_curve,

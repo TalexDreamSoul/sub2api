@@ -38,11 +38,11 @@ type QuotaStatusDisplayConfig struct {
 }
 
 type QuotaStatusConfig struct {
-	Enabled     bool                       `json:"enabled"`
-	Title       string                     `json:"title"`
-	Description string                     `json:"description"`
-	Display     QuotaStatusDisplayConfig   `json:"display"`
-	Groups      []QuotaStatusGroupConfig   `json:"groups"`
+	Enabled     bool                     `json:"enabled"`
+	Title       string                   `json:"title"`
+	Description string                   `json:"description"`
+	Display     QuotaStatusDisplayConfig `json:"display"`
+	Groups      []QuotaStatusGroupConfig `json:"groups"`
 }
 
 type QuotaStatusDimension struct {
@@ -92,12 +92,12 @@ type QuotaStatusGroup struct {
 }
 
 type QuotaStatusSnapshot struct {
-	Enabled     bool                       `json:"enabled"`
-	Title       string                     `json:"title"`
-	Description string                     `json:"description"`
-	Display     QuotaStatusDisplayConfig   `json:"display"`
-	UpdatedAt   time.Time                  `json:"updated_at"`
-	Groups      []QuotaStatusGroup         `json:"groups"`
+	Enabled     bool                     `json:"enabled"`
+	Title       string                   `json:"title"`
+	Description string                   `json:"description"`
+	Display     QuotaStatusDisplayConfig `json:"display"`
+	UpdatedAt   time.Time                `json:"updated_at"`
+	Groups      []QuotaStatusGroup       `json:"groups"`
 }
 
 type QuotaStatusService struct {

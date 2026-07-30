@@ -541,6 +541,10 @@ export default {
       title: 'No capacity data',
       description: 'No groups or accounts have been configured for display.',
     },
+    noVisibleGroups: {
+      title: 'No capacity groups available',
+      description: 'Your account does not currently have matching group access or an active subscription.',
+    },
     summary: {
       title: 'Capacity overview',
       total: 'Displayed accounts',

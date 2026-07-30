@@ -13,6 +13,8 @@ export interface QuotaStatusGroupConfig {
   accounts: QuotaStatusAccountConfig[]
 }
 
+export type QuotaStatusAccessMode = 'public' | 'authenticated' | 'group_scoped'
+
 export interface QuotaStatusDisplayConfig {
   show_rate_multiplier: boolean
   show_model_distribution: boolean
@@ -25,6 +27,7 @@ export interface QuotaStatusConfig {
   enabled: boolean
   title: string
   description: string
+  access_mode: QuotaStatusAccessMode
   display: QuotaStatusDisplayConfig
   groups: QuotaStatusGroupConfig[]
 }

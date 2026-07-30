@@ -47,7 +47,10 @@
       </div>
 
       <div v-else-if="snapshot && snapshot.groups.length === 0" class="py-20">
-        <EmptyState :title="t('quotaStatus.empty.title')" :description="t('quotaStatus.empty.description')" />
+        <EmptyState
+          :title="snapshot.access_mode === 'group_scoped' ? t('quotaStatus.noVisibleGroups.title') : t('quotaStatus.empty.title')"
+          :description="snapshot.access_mode === 'group_scoped' ? t('quotaStatus.noVisibleGroups.description') : t('quotaStatus.empty.description')"
+        />
       </div>
 
       <template v-else-if="snapshot">
@@ -182,6 +185,7 @@
 <script setup lang="ts">
 import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
 import { useI18n } from 'vue-i18n'
+import { useRoute, useRouter } from 'vue-router'
 import {
   Chart as ChartJS,
   CategoryScale,
@@ -216,6 +220,8 @@ ChartJS.register(
 )
 
 const { t, locale } = useI18n()
+const route = useRoute()
+const router = useRouter()
 const appStore = useAppStore()
 const authStore = useAuthStore()
 const snapshot = ref<QuotaStatusSnapshot | null>(null)
@@ -322,6 +328,10 @@ async function load() {
   try {
     snapshot.value = await quotaStatusAPI.getQuotaStatus()
   } catch (error: unknown) {
+    if ((error as { status?: number }).status === 401) {
+      await router.replace({ path: '/login', query: { redirect: route.fullPath } })
+      return
+    }
     appStore.showError(extractApiErrorMessage(error, t('quotaStatus.loadError')))
   } finally {
     loading.value = false

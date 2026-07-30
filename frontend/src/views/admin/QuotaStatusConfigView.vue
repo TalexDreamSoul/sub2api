@@ -36,6 +36,18 @@
             </div>
           </div>
           <div class="sm:col-span-2">
+            <label class="input-label">{{ t('admin.quotaStatus.basic.accessMode') }}</label>
+            <Select
+              v-model="form.access_mode"
+              :options="accessModeOptions"
+              :searchable="false"
+              class="max-w-md"
+            />
+            <p class="mt-2 text-xs text-gray-500 dark:text-gray-400">
+              {{ t(`admin.quotaStatus.basic.accessModeDescriptions.${form.access_mode}`) }}
+            </p>
+          </div>
+          <div class="sm:col-span-2">
             <label class="input-label">{{ t('admin.quotaStatus.basic.pageDescription') }}</label>
             <textarea v-model="form.description" class="input" rows="2" maxlength="500"></textarea>
           </div>
@@ -233,7 +245,7 @@ import Icon from '@/components/icons/Icon.vue'
 import Select from '@/components/common/Select.vue'
 import Toggle from '@/components/common/Toggle.vue'
 import { adminAPI } from '@/api/admin'
-import type { QuotaStatusConfig, QuotaStatusGroupConfig } from '@/api/admin/quotaStatus'
+import type { QuotaStatusAccessMode, QuotaStatusConfig, QuotaStatusGroupConfig } from '@/api/admin/quotaStatus'
 import type { Account, AdminGroup } from '@/types'
 import { useAppStore } from '@/stores/app'
 import { extractApiErrorMessage } from '@/utils/apiError'
@@ -266,6 +278,7 @@ const form = reactive({
   enabled: false,
   title: '',
   description: '',
+  access_mode: 'public' as QuotaStatusAccessMode,
   display: {
     show_rate_multiplier: true,
     show_model_distribution: true,
@@ -276,6 +289,11 @@ const form = reactive({
 })
 
 const publicURL = computed(() => `${window.location.origin}/quota-status`)
+const accessModeOptions = computed(() => [
+  { value: 'public', label: t('admin.quotaStatus.basic.accessModes.public') },
+  { value: 'authenticated', label: t('admin.quotaStatus.basic.accessModes.authenticated') },
+  { value: 'group_scoped', label: t('admin.quotaStatus.basic.accessModes.group_scoped') },
+])
 const usedGroupIDs = computed(() => new Set(groupRows.value.map(row => row.group.id)))
 const availableGroupOptions = computed(() => groups.value
   .filter(group => !usedGroupIDs.value.has(group.id))
@@ -340,6 +358,7 @@ async function load() {
     form.enabled = config.enabled
     form.title = config.title
     form.description = config.description
+    form.access_mode = config.access_mode || 'public'
     if (config.display) {
       form.display.show_rate_multiplier = config.display.show_rate_multiplier ?? true
       form.display.show_model_distribution = config.display.show_model_distribution ?? true
@@ -386,6 +405,7 @@ function toConfig(): QuotaStatusConfig {
     enabled: form.enabled,
     title: form.title.trim(),
     description: form.description.trim(),
+    access_mode: form.access_mode,
     display: {
       show_rate_multiplier: form.display.show_rate_multiplier,
       show_model_distribution: form.display.show_model_distribution,

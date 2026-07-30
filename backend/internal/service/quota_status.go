@@ -16,6 +16,12 @@ import (
 
 const SettingKeyQuotaStatusConfig = "quota_status_config"
 
+const (
+	QuotaStatusAccessModePublic        = "public"
+	QuotaStatusAccessModeAuthenticated = "authenticated"
+	QuotaStatusAccessModeGroupScoped   = "group_scoped"
+)
+
 type QuotaStatusAccountConfig struct {
 	AccountID   int64  `json:"account_id"`
 	DisplayName string `json:"display_name"`
@@ -41,6 +47,7 @@ type QuotaStatusConfig struct {
 	Enabled     bool                     `json:"enabled"`
 	Title       string                   `json:"title"`
 	Description string                   `json:"description"`
+	AccessMode  string                   `json:"access_mode"`
 	Display     QuotaStatusDisplayConfig `json:"display"`
 	Groups      []QuotaStatusGroupConfig `json:"groups"`
 }
@@ -95,6 +102,7 @@ type QuotaStatusSnapshot struct {
 	Enabled     bool                     `json:"enabled"`
 	Title       string                   `json:"title"`
 	Description string                   `json:"description"`
+	AccessMode  string                   `json:"access_mode"`
 	Display     QuotaStatusDisplayConfig `json:"display"`
 	UpdatedAt   time.Time                `json:"updated_at"`
 	Groups      []QuotaStatusGroup       `json:"groups"`
@@ -118,6 +126,7 @@ func defaultQuotaStatusConfig() QuotaStatusConfig {
 	return QuotaStatusConfig{
 		Title:       "账号额度状态",
 		Description: "查看各渠道账号的额度使用情况。",
+		AccessMode:  QuotaStatusAccessModePublic,
 		Display: QuotaStatusDisplayConfig{
 			ShowRateMultiplier:    true,
 			ShowModelDistribution: true,
@@ -169,8 +178,17 @@ func (s *QuotaStatusService) UpdateConfig(ctx context.Context, config QuotaStatu
 func normalizeQuotaStatusConfig(config *QuotaStatusConfig) {
 	config.Title = strings.TrimSpace(config.Title)
 	config.Description = strings.TrimSpace(config.Description)
+	config.AccessMode = strings.TrimSpace(config.AccessMode)
 	if config.Title == "" {
 		config.Title = defaultQuotaStatusConfig().Title
+	}
+	switch config.AccessMode {
+	case "":
+		config.AccessMode = QuotaStatusAccessModePublic
+	case QuotaStatusAccessModePublic, QuotaStatusAccessModeAuthenticated, QuotaStatusAccessModeGroupScoped:
+	default:
+		// Unknown persisted values must not make a restricted page public.
+		config.AccessMode = QuotaStatusAccessModeAuthenticated
 	}
 	if config.Display.CurveDays <= 0 {
 		config.Display.CurveDays = 7
@@ -272,6 +290,16 @@ func quotaStatusAccountBelongsToGroup(account *Account, groupID int64) bool {
 }
 
 func (s *QuotaStatusService) GetSnapshot(ctx context.Context) (QuotaStatusSnapshot, error) {
+	return s.getSnapshot(ctx, nil)
+}
+
+// GetSnapshotForGroups returns only configured groups present in visibleGroupIDs.
+// A nil map means no group filtering; an empty map means no groups are visible.
+func (s *QuotaStatusService) GetSnapshotForGroups(ctx context.Context, visibleGroupIDs map[int64]struct{}) (QuotaStatusSnapshot, error) {
+	return s.getSnapshot(ctx, visibleGroupIDs)
+}
+
+func (s *QuotaStatusService) getSnapshot(ctx context.Context, visibleGroupIDs map[int64]struct{}) (QuotaStatusSnapshot, error) {
 	config, err := s.GetConfig(ctx)
 	if err != nil {
 		return QuotaStatusSnapshot{}, err
@@ -280,6 +308,7 @@ func (s *QuotaStatusService) GetSnapshot(ctx context.Context) (QuotaStatusSnapsh
 		Enabled:     config.Enabled,
 		Title:       config.Title,
 		Description: config.Description,
+		AccessMode:  config.AccessMode,
 		Display:     config.Display,
 		UpdatedAt:   time.Now(),
 		Groups:      []QuotaStatusGroup{},
@@ -289,6 +318,11 @@ func (s *QuotaStatusService) GetSnapshot(ctx context.Context) (QuotaStatusSnapsh
 	}
 
 	for _, groupConfig := range config.Groups {
+		if visibleGroupIDs != nil {
+			if _, visible := visibleGroupIDs[groupConfig.GroupID]; !visible {
+				continue
+			}
+		}
 		group, err := s.adminService.GetGroup(ctx, groupConfig.GroupID)
 		if err != nil {
 			continue

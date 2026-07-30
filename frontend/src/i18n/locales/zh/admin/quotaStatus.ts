@@ -14,6 +14,17 @@ export default {
       pageDescription: '页面说明',
       publicUrl: '公开地址',
       openPage: '打开公开页面',
+      accessMode: '访问权限',
+      accessModes: {
+        public: '所有人可见',
+        authenticated: '仅登录用户可见',
+        group_scoped: '按用户分组权限可见',
+      },
+      accessModeDescriptions: {
+        public: '匿名访问和登录访问都能看到全部已配置展示分组。',
+        authenticated: '未登录用户会跳转登录，登录后可看到全部已配置展示分组。',
+        group_scoped: '必须登录；标准组按公开或专属授权判断，订阅组要求有效订阅，用户只看到有权限的对应分组。',
+      },
     },
     display: {
       title: '展示配置',

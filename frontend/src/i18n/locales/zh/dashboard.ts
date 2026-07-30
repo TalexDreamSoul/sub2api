@@ -546,6 +546,10 @@ export default {
       title: '暂无容量数据',
       description: '管理员尚未配置需要展示的分组和账号。',
     },
+    noVisibleGroups: {
+      title: '暂无可查看的容量分组',
+      description: '当前账号没有对应分组权限或有效订阅。',
+    },
     summary: {
       title: '容量概览',
       total: '展示账号',

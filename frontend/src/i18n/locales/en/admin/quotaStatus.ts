@@ -14,6 +14,17 @@ export default {
       pageDescription: 'Page description',
       publicUrl: 'Public URL',
       openPage: 'Open public page',
+      accessMode: 'Access control',
+      accessModes: {
+        public: 'Visible to everyone',
+        authenticated: 'Signed-in users only',
+        group_scoped: 'Filter by user group access',
+      },
+      accessModeDescriptions: {
+        public: 'Anonymous and signed-in visitors can see every configured display group.',
+        authenticated: 'Anonymous visitors are sent to sign in; signed-in users can see every configured display group.',
+        group_scoped: 'Sign-in is required. Standard groups use public or explicit access rules, subscription groups require an active subscription, and users only see matching groups.',
+      },
     },
     groups: {
       title: 'Displayed Groups',

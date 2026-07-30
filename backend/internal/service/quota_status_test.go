@@ -73,6 +73,67 @@ func (r *quotaStatusSettingRepo) Delete(context.Context, string) error {
 	panic("unexpected Delete call")
 }
 
+func TestQuotaStatusConfigDefaultsMissingAccessModeToPublic(t *testing.T) {
+	repo := &quotaStatusSettingRepo{value: `{"enabled":true,"title":"容量状态","groups":[]}`}
+	quotaService := NewQuotaStatusService(
+		&quotaStatusAdminStub{groups: map[int64]*Group{}, accounts: map[int64]*Account{}},
+		NewSettingService(repo, nil),
+		nil,
+	)
+
+	config, err := quotaService.GetConfig(context.Background())
+	require.NoError(t, err)
+	require.Equal(t, QuotaStatusAccessModePublic, config.AccessMode)
+}
+
+func TestQuotaStatusConfigUnknownAccessModeFailsClosed(t *testing.T) {
+	repo := &quotaStatusSettingRepo{value: `{"enabled":true,"access_mode":"typo","groups":[]}`}
+	quotaService := NewQuotaStatusService(
+		&quotaStatusAdminStub{groups: map[int64]*Group{}, accounts: map[int64]*Account{}},
+		NewSettingService(repo, nil),
+		nil,
+	)
+
+	config, err := quotaService.GetConfig(context.Background())
+	require.NoError(t, err)
+	require.Equal(t, QuotaStatusAccessModeAuthenticated, config.AccessMode)
+}
+
+func TestQuotaStatusSnapshotFiltersConfiguredGroupsByViewerAccess(t *testing.T) {
+	accounts := map[int64]*Account{
+		11: {ID: 11, Name: "group-seven", Platform: PlatformOpenAI, Type: AccountTypeAPIKey, Status: StatusActive, Schedulable: true, GroupIDs: []int64{7}},
+		12: {ID: 12, Name: "group-eight", Platform: PlatformOpenAI, Type: AccountTypeAPIKey, Status: StatusActive, Schedulable: true, GroupIDs: []int64{8}},
+	}
+	config := QuotaStatusConfig{
+		Enabled:    true,
+		AccessMode: QuotaStatusAccessModeGroupScoped,
+		Groups: []QuotaStatusGroupConfig{
+			{GroupID: 7, DisplayName: "Seven", Accounts: []QuotaStatusAccountConfig{{AccountID: 11}}},
+			{GroupID: 8, DisplayName: "Eight", Accounts: []QuotaStatusAccountConfig{{AccountID: 12}}},
+		},
+	}
+	payload, err := json.Marshal(config)
+	require.NoError(t, err)
+
+	quotaService := NewQuotaStatusService(
+		&quotaStatusAdminStub{
+			groups: map[int64]*Group{
+				7: {ID: 7, Name: "Seven", Platform: PlatformOpenAI},
+				8: {ID: 8, Name: "Eight", Platform: PlatformOpenAI},
+			},
+			accounts: accounts,
+		},
+		NewSettingService(&quotaStatusSettingRepo{value: string(payload)}, nil),
+		nil,
+	)
+
+	snapshot, err := quotaService.GetSnapshotForGroups(context.Background(), map[int64]struct{}{8: {}})
+	require.NoError(t, err)
+	require.Equal(t, QuotaStatusAccessModeGroupScoped, snapshot.AccessMode)
+	require.Len(t, snapshot.Groups, 1)
+	require.Equal(t, "Eight", snapshot.Groups[0].Name)
+}
+
 func TestQuotaStatusSnapshotHidesAccountNameAndReusesQuotaDetails(t *testing.T) {
 	limit := 100.0
 	used := 72.5

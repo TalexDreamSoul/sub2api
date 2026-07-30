@@ -20,7 +20,8 @@ export interface QuotaStatusDisplayConfig {
   show_rate_multiplier: boolean
   show_model_distribution: boolean
   show_daily_curve: boolean
-  show_scheduling_quota: boolean
+  show_schedulable: boolean
+  show_priority: boolean
   curve_days: number
 }
 

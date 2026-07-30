@@ -95,10 +95,17 @@
           </div>
           <div class="flex items-center justify-between rounded-lg border border-gray-200 p-4 dark:border-dark-700">
             <div>
-              <div class="text-sm font-medium text-gray-900 dark:text-white">{{ t('admin.quotaStatus.display.showSchedulingQuota') }}</div>
-              <div class="text-xs text-gray-500 dark:text-gray-400">{{ t('admin.quotaStatus.display.showSchedulingQuotaDesc') }}</div>
+              <div class="text-sm font-medium text-gray-900 dark:text-white">{{ t('admin.quotaStatus.display.showSchedulable') }}</div>
+              <div class="text-xs text-gray-500 dark:text-gray-400">{{ t('admin.quotaStatus.display.showSchedulableDesc') }}</div>
             </div>
-            <Toggle v-model="form.display.show_scheduling_quota" />
+            <Toggle v-model="form.display.show_schedulable" />
+          </div>
+          <div class="flex items-center justify-between rounded-lg border border-gray-200 p-4 dark:border-dark-700">
+            <div>
+              <div class="text-sm font-medium text-gray-900 dark:text-white">{{ t('admin.quotaStatus.display.showPriority') }}</div>
+              <div class="text-xs text-gray-500 dark:text-gray-400">{{ t('admin.quotaStatus.display.showPriorityDesc') }}</div>
+            </div>
+            <Toggle v-model="form.display.show_priority" />
           </div>
           <div class="sm:col-span-2">
             <label class="input-label">{{ t('admin.quotaStatus.display.curveDays') }}</label>
@@ -291,7 +298,8 @@ const form = reactive({
     show_rate_multiplier: true,
     show_model_distribution: true,
     show_daily_curve: true,
-    show_scheduling_quota: true,
+    show_schedulable: false,
+    show_priority: false,
     curve_days: 7,
   },
 })
@@ -372,7 +380,8 @@ async function load() {
       form.display.show_rate_multiplier = config.display.show_rate_multiplier ?? true
       form.display.show_model_distribution = config.display.show_model_distribution ?? true
       form.display.show_daily_curve = config.display.show_daily_curve ?? true
-      form.display.show_scheduling_quota = config.display.show_scheduling_quota ?? true
+      form.display.show_schedulable = config.display.show_schedulable ?? false
+      form.display.show_priority = config.display.show_priority ?? false
       form.display.curve_days = config.display.curve_days ?? 7
     }
     const groupByID = new Map(allGroups.map(group => [group.id, group]))
@@ -420,7 +429,8 @@ function toConfig(): QuotaStatusConfig {
       show_rate_multiplier: form.display.show_rate_multiplier,
       show_model_distribution: form.display.show_model_distribution,
       show_daily_curve: form.display.show_daily_curve,
-      show_scheduling_quota: form.display.show_scheduling_quota,
+      show_schedulable: form.display.show_schedulable,
+      show_priority: form.display.show_priority,
       curve_days: form.display.curve_days,
     },
     groups: groupRows.value.map(row => ({

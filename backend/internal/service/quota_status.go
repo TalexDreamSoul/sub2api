@@ -40,7 +40,8 @@ type QuotaStatusDisplayConfig struct {
 	ShowRateMultiplier    bool `json:"show_rate_multiplier"`
 	ShowModelDistribution bool `json:"show_model_distribution"`
 	ShowDailyCurve        bool `json:"show_daily_curve"`
-	ShowSchedulingQuota   bool `json:"show_scheduling_quota"`
+	ShowSchedulable       bool `json:"show_schedulable"`
+	ShowPriority          bool `json:"show_priority"`
 	CurveDays             int  `json:"curve_days"`
 }
 
@@ -86,8 +87,8 @@ type QuotaStatusAccount struct {
 	Type              string                  `json:"type,omitempty"`
 	Status            string                  `json:"status"`
 	RateMultiplier    float64                 `json:"rate_multiplier"`
-	Schedulable       bool                    `json:"schedulable"`
-	Priority          int                     `json:"priority"`
+	Schedulable       *bool                   `json:"schedulable,omitempty"`
+	Priority          *int                    `json:"priority,omitempty"`
 	Dimensions        []QuotaStatusDimension  `json:"dimensions"`
 	DailyCurve        []QuotaStatusCurvePoint `json:"daily_curve,omitempty"`
 	ModelDistribution []QuotaStatusModelStat  `json:"model_distribution,omitempty"`
@@ -133,7 +134,8 @@ func defaultQuotaStatusConfig() QuotaStatusConfig {
 			ShowRateMultiplier:    true,
 			ShowModelDistribution: true,
 			ShowDailyCurve:        true,
-			ShowSchedulingQuota:   true,
+			ShowSchedulable:       false,
+			ShowPriority:          false,
 			CurveDays:             7,
 		},
 		Groups: []QuotaStatusGroupConfig{},
@@ -383,12 +385,18 @@ func (s *QuotaStatusService) getSnapshot(ctx context.Context, visibleGroupIDs ma
 					Platform:       account.Platform,
 					Status:         publicAccountStatus(account),
 					RateMultiplier: rateMult,
-					Schedulable:    account.Schedulable,
-					Priority:       account.Priority,
 					Dimensions:     buildQuotaStatusDimensions(account, usage),
 				}
 				if config.Display.ShowAccountType {
 					result.Type = account.Type
+				}
+				if config.Display.ShowSchedulable {
+					schedulable := account.Schedulable
+					result.Schedulable = &schedulable
+				}
+				if config.Display.ShowPriority {
+					priority := account.Priority
+					result.Priority = &priority
 				}
 				// 每日调度曲线
 				if config.Display.ShowDailyCurve {

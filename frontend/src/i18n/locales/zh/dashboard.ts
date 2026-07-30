@@ -535,6 +535,7 @@ export default {
     groupSummary: '{available} / {total} 个账号可用',
     emptyGroup: '该分组暂无展示账号',
     noQuotaDetails: '暂未获取到额度明细',
+    quotaUsage: '额度使用',
     upstreamSample: '上游额度采样',
     resetsAt: '{time} 重置',
     unknown: '未知',

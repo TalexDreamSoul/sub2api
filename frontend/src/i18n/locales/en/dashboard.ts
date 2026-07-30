@@ -530,6 +530,7 @@ export default {
     groupSummary: '{available} of {total} accounts available',
     emptyGroup: 'No displayed accounts in this group',
     noQuotaDetails: 'Quota details are not available yet',
+    quotaUsage: 'Quota usage',
     upstreamSample: 'Upstream quota sample',
     resetsAt: 'Resets {time}',
     unknown: 'Unknown',

@@ -225,6 +225,105 @@ func TestQuotaStatusSnapshotIncludesAccountTypeOnlyWhenEnabled(t *testing.T) {
 	require.Equal(t, AccountTypeOAuth, snapshot.Groups[0].Accounts[0].Type)
 }
 
+func TestQuotaStatusSnapshotHidesSchedulingFieldsByDefault(t *testing.T) {
+	account := &Account{
+		ID:          20,
+		Name:        "private-scheduling-account",
+		Platform:    PlatformOpenAI,
+		Status:      StatusActive,
+		Schedulable: true,
+		Priority:    12,
+		GroupIDs:    []int64{10},
+	}
+	config := QuotaStatusConfig{
+		Enabled: true,
+		Groups: []QuotaStatusGroupConfig{{
+			GroupID:  10,
+			Accounts: []QuotaStatusAccountConfig{{AccountID: account.ID}},
+		}},
+	}
+	payload, err := json.Marshal(config)
+	require.NoError(t, err)
+	quotaService := NewQuotaStatusService(
+		&quotaStatusAdminStub{
+			groups:   map[int64]*Group{10: {ID: 10, Name: "OpenAI", Platform: PlatformOpenAI}},
+			accounts: map[int64]*Account{account.ID: account},
+		},
+		NewSettingService(&quotaStatusSettingRepo{value: string(payload)}, nil),
+		nil,
+	)
+
+	snapshot, err := quotaService.GetSnapshot(context.Background())
+	require.NoError(t, err)
+	require.Len(t, snapshot.Groups, 1)
+	require.Len(t, snapshot.Groups[0].Accounts, 1)
+	encoded, err := json.Marshal(snapshot.Groups[0].Accounts[0])
+	require.NoError(t, err)
+	require.NotContains(t, string(encoded), `"schedulable"`)
+	require.NotContains(t, string(encoded), `"priority"`)
+}
+
+func TestQuotaStatusSnapshotIncludesEnabledSchedulingFields(t *testing.T) {
+	account := &Account{
+		ID:          21,
+		Name:        "visible-scheduling-account",
+		Platform:    PlatformOpenAI,
+		Status:      StatusActive,
+		Schedulable: false,
+		Priority:    0,
+		GroupIDs:    []int64{11},
+	}
+	tests := []struct {
+		name                string
+		display             QuotaStatusDisplayConfig
+		containsSchedulable bool
+		containsPriority    bool
+	}{
+		{name: "schedulable only", display: QuotaStatusDisplayConfig{ShowSchedulable: true}, containsSchedulable: true},
+		{name: "priority only", display: QuotaStatusDisplayConfig{ShowPriority: true}, containsPriority: true},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			config := QuotaStatusConfig{
+				Enabled: true,
+				Display: tt.display,
+				Groups: []QuotaStatusGroupConfig{{
+					GroupID:  11,
+					Accounts: []QuotaStatusAccountConfig{{AccountID: account.ID}},
+				}},
+			}
+			payload, err := json.Marshal(config)
+			require.NoError(t, err)
+			quotaService := NewQuotaStatusService(
+				&quotaStatusAdminStub{
+					groups:   map[int64]*Group{11: {ID: 11, Name: "OpenAI", Platform: PlatformOpenAI}},
+					accounts: map[int64]*Account{account.ID: account},
+				},
+				NewSettingService(&quotaStatusSettingRepo{value: string(payload)}, nil),
+				nil,
+			)
+
+			snapshot, err := quotaService.GetSnapshot(context.Background())
+			require.NoError(t, err)
+			require.Len(t, snapshot.Groups, 1)
+			require.Len(t, snapshot.Groups[0].Accounts, 1)
+			encoded, err := json.Marshal(snapshot.Groups[0].Accounts[0])
+			require.NoError(t, err)
+			if tt.containsSchedulable {
+				require.Contains(t, string(encoded), `"schedulable":false`)
+			} else {
+				require.NotContains(t, string(encoded), `"schedulable"`)
+			}
+			if tt.containsPriority {
+				require.Contains(t, string(encoded), `"priority":0`)
+			} else {
+				require.NotContains(t, string(encoded), `"priority"`)
+			}
+		})
+	}
+}
+
 func TestAccountUsageServiceBuildsPassiveSnapshotsForPersistedPlatforms(t *testing.T) {
 	resetAt := time.Now().Add(time.Hour).UTC().Format(time.RFC3339)
 	usageService := &AccountUsageService{grokQuotaFetcher: NewGrokQuotaFetcher()}

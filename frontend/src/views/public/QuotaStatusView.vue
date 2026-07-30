@@ -114,19 +114,25 @@
                     </div>
                   </div>
                   <!-- 调度信息 -->
-                  <div v-if="display?.show_scheduling_quota" class="flex items-center gap-3 text-xs">
-                    <span class="inline-flex items-center gap-1 rounded px-2 py-1"
-                      :class="account.schedulable ? 'bg-emerald-50 text-emerald-700 dark:bg-emerald-900/20 dark:text-emerald-400' : 'bg-red-50 text-red-700 dark:bg-red-900/20 dark:text-red-400'">
-                      <span class="h-1.5 w-1.5 rounded-full" :class="account.schedulable ? 'bg-emerald-500' : 'bg-red-500'"></span>
-                      {{ account.schedulable ? t('quotaStatus.schedulable') : t('quotaStatus.unschedulable') }}
+                  <div v-if="display?.show_schedulable || display?.show_priority" class="flex items-center gap-3 text-xs">
+                    <span v-if="display?.show_schedulable" class="inline-flex items-center gap-1 rounded px-2 py-1"
+                      :class="account.schedulable === true ? 'bg-emerald-50 text-emerald-700 dark:bg-emerald-900/20 dark:text-emerald-400' : 'bg-red-50 text-red-700 dark:bg-red-900/20 dark:text-red-400'">
+                      <span class="h-1.5 w-1.5 rounded-full" :class="account.schedulable === true ? 'bg-emerald-500' : 'bg-red-500'"></span>
+                      {{ account.schedulable === true ? t('quotaStatus.schedulable') : t('quotaStatus.unschedulable') }}
                     </span>
-                    <span class="text-gray-500 dark:text-gray-400">{{ t('quotaStatus.priority') }}: {{ account.priority }}</span>
+                    <span v-if="display?.show_priority" class="text-gray-500 dark:text-gray-400">{{ t('quotaStatus.priority') }}: {{ account.priority }}</span>
                   </div>
                 </div>
 
                 <!-- 额度维度 -->
-                <div v-if="account.dimensions.length === 0" class="flex min-h-16 items-center rounded-lg bg-gray-50 px-4 text-sm text-gray-500 dark:bg-dark-800 dark:text-gray-400 mb-4">
-                  {{ t('quotaStatus.noQuotaDetails') }}
+                <div v-if="account.dimensions.length === 0" class="rounded-lg bg-gray-50 p-4 dark:bg-dark-800 mb-4">
+                  <div class="flex items-start justify-between gap-3">
+                    <span class="text-xs font-medium text-gray-600 dark:text-gray-300">{{ t('quotaStatus.quotaUsage') }}</span>
+                    <span class="font-mono text-xs font-semibold text-gray-900 dark:text-white">0%</span>
+                  </div>
+                  <div class="mt-3 h-1.5 overflow-hidden rounded-full bg-gray-200 dark:bg-dark-600">
+                    <div class="h-full w-0 rounded-full bg-emerald-500"></div>
+                  </div>
                 </div>
                 <div v-else class="grid gap-3 md:grid-cols-2 xl:grid-cols-3 mb-4">
                   <div v-for="dimension in account.dimensions" :key="dimension.key" class="rounded-lg bg-gray-50 p-4 dark:bg-dark-800">

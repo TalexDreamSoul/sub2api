@@ -13,10 +13,19 @@ export interface QuotaStatusGroupConfig {
   accounts: QuotaStatusAccountConfig[]
 }
 
+export interface QuotaStatusDisplayConfig {
+  show_rate_multiplier: boolean
+  show_model_distribution: boolean
+  show_daily_curve: boolean
+  show_scheduling_quota: boolean
+  curve_days: number
+}
+
 export interface QuotaStatusConfig {
   enabled: boolean
   title: string
   description: string
+  display: QuotaStatusDisplayConfig
   groups: QuotaStatusGroupConfig[]
 }
 

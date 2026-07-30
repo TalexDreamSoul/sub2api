@@ -569,6 +569,18 @@ export default {
       grok_requests: 'Request quota',
       grok_tokens: 'Token quota',
     },
+    rateMultiplier: 'Billing Rate',
+    schedulingQuota: 'Scheduling',
+    schedulable: 'Schedulable',
+    unschedulable: 'Unschedulable',
+    priority: 'Priority',
+    accountType: 'Type',
+    dailyCurve: '{days}-Day Usage Curve',
+    modelDistribution: 'Model Distribution',
+    noCurveData: 'No curve data',
+    noModelData: 'No model data',
+    curveCost: 'Cost (USD)',
+    curveRequests: 'Requests',
   },
 
   // Model Plaza (public group/model pricing showcase)

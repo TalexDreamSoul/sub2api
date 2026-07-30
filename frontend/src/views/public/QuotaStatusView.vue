@@ -84,19 +84,45 @@
               {{ t('quotaStatus.emptyGroup') }}
             </div>
             <div v-else class="divide-y divide-gray-100 dark:divide-dark-700">
-              <div v-for="account in group.accounts" :key="account.name" class="grid gap-4 px-5 py-5 lg:grid-cols-[220px_minmax(0,1fr)]">
-                <div class="min-w-0">
-                  <div class="truncate text-sm font-semibold text-gray-950 dark:text-white">{{ account.name }}</div>
-                  <div class="mt-2 inline-flex items-center gap-2 text-xs font-medium" :class="statusTextClass(account.status)">
-                    <span class="h-2 w-2 rounded-full" :class="statusDotClass(account.status)" aria-hidden="true"></span>
-                    {{ statusLabel(account.status) }}
+              <div v-for="account in group.accounts" :key="account.name" class="px-5 py-5">
+                <!-- 账号头部：名称 + 状态 + 倍率 + 调度信息 -->
+                <div class="flex flex-wrap items-center gap-3 mb-4">
+                  <div class="min-w-0 flex-1">
+                    <div class="flex flex-wrap items-center gap-2">
+                      <span class="truncate text-sm font-semibold text-gray-950 dark:text-white">{{ account.name }}</span>
+                      <span class="rounded text-[10px] px-1.5 py-0.5 font-mono font-medium bg-gray-100 text-gray-500 dark:bg-dark-700 dark:text-gray-400">
+                        {{ account.type }}
+                      </span>
+                    </div>
+                    <div class="mt-1 flex flex-wrap items-center gap-2">
+                      <span class="inline-flex items-center gap-1.5 text-xs font-medium" :class="statusTextClass(account.status)">
+                        <span class="h-2 w-2 rounded-full" :class="statusDotClass(account.status)" aria-hidden="true"></span>
+                        {{ statusLabel(account.status) }}
+                      </span>
+                      <!-- 计费倍率标签 -->
+                      <span v-if="display?.show_rate_multiplier && account.rate_multiplier !== 1"
+                        class="inline-flex items-center rounded px-1.5 py-0.5 text-[10px] font-medium"
+                        :class="account.rate_multiplier > 1 ? 'bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-300' : 'bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-300'">
+                        {{ t('quotaStatus.rateMultiplier') }}: {{ account.rate_multiplier.toFixed(2) }}x
+                      </span>
+                    </div>
+                  </div>
+                  <!-- 调度信息 -->
+                  <div v-if="display?.show_scheduling_quota" class="flex items-center gap-3 text-xs">
+                    <span class="inline-flex items-center gap-1 rounded px-2 py-1"
+                      :class="account.schedulable ? 'bg-emerald-50 text-emerald-700 dark:bg-emerald-900/20 dark:text-emerald-400' : 'bg-red-50 text-red-700 dark:bg-red-900/20 dark:text-red-400'">
+                      <span class="h-1.5 w-1.5 rounded-full" :class="account.schedulable ? 'bg-emerald-500' : 'bg-red-500'"></span>
+                      {{ account.schedulable ? t('quotaStatus.schedulable') : t('quotaStatus.unschedulable') }}
+                    </span>
+                    <span class="text-gray-500 dark:text-gray-400">{{ t('quotaStatus.priority') }}: {{ account.priority }}</span>
                   </div>
                 </div>
 
-                <div v-if="account.dimensions.length === 0" class="flex min-h-16 items-center rounded-lg bg-gray-50 px-4 text-sm text-gray-500 dark:bg-dark-800 dark:text-gray-400">
+                <!-- 额度维度 -->
+                <div v-if="account.dimensions.length === 0" class="flex min-h-16 items-center rounded-lg bg-gray-50 px-4 text-sm text-gray-500 dark:bg-dark-800 dark:text-gray-400 mb-4">
                   {{ t('quotaStatus.noQuotaDetails') }}
                 </div>
-                <div v-else class="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
+                <div v-else class="grid gap-3 md:grid-cols-2 xl:grid-cols-3 mb-4">
                   <div v-for="dimension in account.dimensions" :key="dimension.key" class="rounded-lg bg-gray-50 p-4 dark:bg-dark-800">
                     <div class="flex items-start justify-between gap-3">
                       <span class="text-xs font-medium text-gray-600 dark:text-gray-300">{{ dimensionLabel(dimension) }}</span>
@@ -108,6 +134,39 @@
                     <div class="mt-2 flex flex-wrap items-center justify-between gap-2 text-xs text-gray-500 dark:text-gray-400">
                       <span>{{ formatDimensionValue(dimension) }}</span>
                       <span v-if="dimension.resets_at">{{ t('quotaStatus.resetsAt', { time: formatResetAt(dimension.resets_at) }) }}</span>
+                    </div>
+                  </div>
+                </div>
+
+                <!-- 用量曲线 + 模型分布 图表行 -->
+                <div v-if="(display?.show_daily_curve && account.daily_curve?.length) || (display?.show_model_distribution && account.model_distribution?.length)" class="grid gap-4 mt-4 lg:grid-cols-2">
+                  <!-- 每日用量曲线 -->
+                  <div v-if="display?.show_daily_curve && account.daily_curve?.length" class="rounded-lg border border-gray-100 bg-gray-50/50 p-4 dark:border-dark-700 dark:bg-dark-800/50">
+                    <h4 class="mb-3 text-xs font-semibold text-gray-500 dark:text-gray-400">
+                      {{ t('quotaStatus.dailyCurve', { days: display?.curve_days || 7 }) }}
+                    </h4>
+                    <div class="h-48">
+                      <Line :data="buildCurveChartData(account.daily_curve)" :options="curveChartOptions" />
+                    </div>
+                  </div>
+                  <!-- 模型分布 -->
+                  <div v-if="display?.show_model_distribution && account.model_distribution?.length" class="rounded-lg border border-gray-100 bg-gray-50/50 p-4 dark:border-dark-700 dark:bg-dark-800/50">
+                    <h4 class="mb-3 text-xs font-semibold text-gray-500 dark:text-gray-400">
+                      {{ t('quotaStatus.modelDistribution') }}
+                    </h4>
+                    <div class="flex items-center gap-4">
+                      <div class="h-32 w-32 shrink-0">
+                        <Doughnut :data="buildModelChartData(account.model_distribution)" :options="doughnutOptions" />
+                      </div>
+                      <div class="min-w-0 flex-1 text-[11px]">
+                        <div v-for="(m, i) in account.model_distribution.slice(0, 5)" :key="m.model" class="flex items-center justify-between gap-2 py-0.5">
+                          <span class="truncate text-gray-600 dark:text-gray-400" :title="m.model">
+                            <span class="inline-block w-2 h-2 rounded-full mr-1.5" :style="{ background: chartColors[i % chartColors.length] }"></span>
+                            {{ m.model }}
+                          </span>
+                          <span class="font-mono text-gray-900 dark:text-white">${{ formatCompactCost(m.actual_cost) }}</span>
+                        </div>
+                      </div>
                     </div>
                   </div>
                 </div>
@@ -123,13 +182,38 @@
 <script setup lang="ts">
 import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
 import { useI18n } from 'vue-i18n'
+import {
+  Chart as ChartJS,
+  CategoryScale,
+  LinearScale,
+  PointElement,
+  LineElement,
+  ArcElement,
+  Title,
+  Tooltip,
+  Legend,
+  Filler,
+} from 'chart.js'
+import { Line, Doughnut } from 'vue-chartjs'
 import EmptyState from '@/components/common/EmptyState.vue'
 import Icon from '@/components/icons/Icon.vue'
 import LocaleSwitcher from '@/components/common/LocaleSwitcher.vue'
-import quotaStatusAPI, { type QuotaStatusAccount, type QuotaStatusDimension, type QuotaStatusSnapshot } from '@/api/quotaStatus'
+import quotaStatusAPI, { type QuotaStatusAccount, type QuotaStatusDimension, type QuotaStatusSnapshot, type QuotaStatusCurvePoint, type QuotaStatusModelStat } from '@/api/quotaStatus'
 import { useAppStore } from '@/stores/app'
 import { useAuthStore } from '@/stores/auth'
 import { extractApiErrorMessage } from '@/utils/apiError'
+
+ChartJS.register(
+  CategoryScale,
+  LinearScale,
+  PointElement,
+  LineElement,
+  ArcElement,
+  Title,
+  Tooltip,
+  Legend,
+  Filler
+)
 
 const { t, locale } = useI18n()
 const appStore = useAppStore()
@@ -143,11 +227,95 @@ const homePath = computed(() => {
   return authStore.isAdmin ? '/admin/dashboard' : '/dashboard'
 })
 
+const display = computed(() => snapshot.value?.display)
+
 const summary = computed(() => {
   const accounts = snapshot.value?.groups.flatMap(group => group.accounts) || []
   const available = accounts.filter(account => account.status === 'available').length
   return { total: accounts.length, available, attention: accounts.length - available }
 })
+
+const isDark = computed(() => document.documentElement.classList.contains('dark'))
+
+const chartColors = ['#3b82f6', '#10b981', '#f59e0b', '#ef4444', '#8b5cf6', '#ec4899', '#14b8a6', '#f97316', '#6366f1', '#84cc16']
+
+const chartTextColor = computed(() => isDark.value ? '#e5e7eb' : '#374151')
+const chartGridColor = computed(() => isDark.value ? '#374151' : '#e5e7eb')
+
+function buildCurveChartData(curve: QuotaStatusCurvePoint[]) {
+  if (!curve?.length) return { labels: [] as string[], datasets: [] }
+  return {
+    labels: curve.map(p => p.label),
+    datasets: [
+      {
+        label: t('quotaStatus.curveCost'),
+        data: curve.map(p => p.cost),
+        borderColor: '#3b82f6',
+        backgroundColor: 'rgba(59, 130, 246, 0.08)',
+        fill: true,
+        tension: 0.3,
+        yAxisID: 'y',
+      },
+      {
+        label: t('quotaStatus.curveRequests'),
+        data: curve.map(p => p.requests),
+        borderColor: '#f97316',
+        backgroundColor: 'rgba(249, 115, 22, 0.05)',
+        fill: false,
+        tension: 0.3,
+        yAxisID: 'y1',
+      },
+    ],
+  }
+}
+
+const curveChartOptions = computed(() => ({
+  responsive: true,
+  maintainAspectRatio: false,
+  interaction: { intersect: false, mode: 'index' as const },
+  plugins: {
+    legend: {
+      position: 'top' as const,
+      labels: { color: chartTextColor.value, usePointStyle: true, boxWidth: 8, padding: 10, font: { size: 10 } },
+    },
+  },
+  scales: {
+    x: {
+      grid: { color: chartGridColor.value },
+      ticks: { color: chartTextColor.value, font: { size: 9 }, maxRotation: 45 },
+    },
+    y: {
+      type: 'linear' as const,
+      position: 'left' as const,
+      grid: { color: chartGridColor.value },
+      ticks: { color: '#3b82f6', font: { size: 9 }, callback: (v: string | number) => '$' + formatCompactCost(Number(v)) },
+    },
+    y1: {
+      type: 'linear' as const,
+      position: 'right' as const,
+      grid: { drawOnChartArea: false },
+      ticks: { color: '#f97316', font: { size: 9 }, callback: (v: string | number) => formatCompactNumber(Number(v)) },
+    },
+  },
+}))
+
+function buildModelChartData(models: QuotaStatusModelStat[]) {
+  if (!models?.length) return { labels: [] as string[], datasets: [] }
+  return {
+    labels: models.map(m => m.model),
+    datasets: [{
+      data: models.map(m => m.actual_cost),
+      backgroundColor: chartColors.slice(0, models.length),
+      borderWidth: 0,
+    }],
+  }
+}
+
+const doughnutOptions = {
+  responsive: true,
+  maintainAspectRatio: false,
+  plugins: { legend: { display: false } },
+}
 
 async function load() {
   loading.value = true
@@ -207,6 +375,19 @@ function dimensionLabel(dimension: QuotaStatusDimension): string {
 
 function compactNumber(value: number): string {
   return new Intl.NumberFormat(locale.value, { maximumFractionDigits: 1, notation: value >= 10000 ? 'compact' : 'standard' }).format(value)
+}
+
+function formatCompactCost(value: number): string {
+  if (value >= 1000) return (value / 1000).toFixed(2) + 'K'
+  if (value >= 1) return value.toFixed(2)
+  if (value >= 0.01) return value.toFixed(3)
+  return value.toFixed(4)
+}
+
+function formatCompactNumber(value: number): string {
+  if (value >= 1_000_000) return (value / 1_000_000).toFixed(2) + 'M'
+  if (value >= 1_000) return (value / 1_000).toFixed(2) + 'K'
+  return value.toLocaleString()
 }
 
 function formatDimensionValue(dimension: QuotaStatusDimension): string {

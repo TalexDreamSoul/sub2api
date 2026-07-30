@@ -574,6 +574,18 @@ export default {
       grok_requests: '请求额度',
       grok_tokens: 'Token 额度',
     },
+    rateMultiplier: '计费倍率',
+    schedulingQuota: '调度信息',
+    schedulable: '可调度',
+    unschedulable: '不可调度',
+    priority: '优先级',
+    accountType: '账号类型',
+    dailyCurve: '近 {days} 天用量曲线',
+    modelDistribution: '模型分布',
+    noCurveData: '暂无曲线数据',
+    noModelData: '暂无模型数据',
+    curveCost: '费用 (USD)',
+    curveRequests: '请求数',
   },
 
   // Model Plaza (public group/model pricing showcase)

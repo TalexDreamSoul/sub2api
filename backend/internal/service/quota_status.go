@@ -10,6 +10,8 @@ import (
 	"strings"
 	"sync"
 	"time"
+
+	"github.com/Wei-Shaw/sub2api/internal/pkg/timezone"
 )
 
 const SettingKeyQuotaStatusConfig = "quota_status_config"
@@ -27,11 +29,20 @@ type QuotaStatusGroupConfig struct {
 	Accounts    []QuotaStatusAccountConfig `json:"accounts"`
 }
 
+type QuotaStatusDisplayConfig struct {
+	ShowRateMultiplier    bool `json:"show_rate_multiplier"`
+	ShowModelDistribution bool `json:"show_model_distribution"`
+	ShowDailyCurve        bool `json:"show_daily_curve"`
+	ShowSchedulingQuota   bool `json:"show_scheduling_quota"`
+	CurveDays             int  `json:"curve_days"`
+}
+
 type QuotaStatusConfig struct {
-	Enabled     bool                     `json:"enabled"`
-	Title       string                   `json:"title"`
-	Description string                   `json:"description"`
-	Groups      []QuotaStatusGroupConfig `json:"groups"`
+	Enabled     bool                       `json:"enabled"`
+	Title       string                     `json:"title"`
+	Description string                     `json:"description"`
+	Display     QuotaStatusDisplayConfig   `json:"display"`
+	Groups      []QuotaStatusGroupConfig   `json:"groups"`
 }
 
 type QuotaStatusDimension struct {
@@ -44,11 +55,34 @@ type QuotaStatusDimension struct {
 	Unit        string     `json:"unit"`
 }
 
+// QuotaStatusCurvePoint 表示单个时间点的调度/用量数据
+type QuotaStatusCurvePoint struct {
+	Date     string  `json:"date"`
+	Label    string  `json:"label"`
+	Cost     float64 `json:"cost"`
+	Requests int64   `json:"requests"`
+	Tokens   int64   `json:"tokens"`
+}
+
+// QuotaStatusModelStat 模型分布统计
+type QuotaStatusModelStat struct {
+	Model      string  `json:"model"`
+	Requests   int64   `json:"requests"`
+	Tokens     int64   `json:"tokens"`
+	ActualCost float64 `json:"actual_cost"`
+}
+
 type QuotaStatusAccount struct {
-	Name       string                 `json:"name"`
-	Platform   string                 `json:"platform"`
-	Status     string                 `json:"status"`
-	Dimensions []QuotaStatusDimension `json:"dimensions"`
+	Name              string                  `json:"name"`
+	Platform          string                  `json:"platform"`
+	Type              string                  `json:"type"`
+	Status            string                  `json:"status"`
+	RateMultiplier    float64                 `json:"rate_multiplier"`
+	Schedulable       bool                    `json:"schedulable"`
+	Priority          int                     `json:"priority"`
+	Dimensions        []QuotaStatusDimension  `json:"dimensions"`
+	DailyCurve        []QuotaStatusCurvePoint `json:"daily_curve,omitempty"`
+	ModelDistribution []QuotaStatusModelStat  `json:"model_distribution,omitempty"`
 }
 
 type QuotaStatusGroup struct {
@@ -58,11 +92,12 @@ type QuotaStatusGroup struct {
 }
 
 type QuotaStatusSnapshot struct {
-	Enabled     bool               `json:"enabled"`
-	Title       string             `json:"title"`
-	Description string             `json:"description"`
-	UpdatedAt   time.Time          `json:"updated_at"`
-	Groups      []QuotaStatusGroup `json:"groups"`
+	Enabled     bool                       `json:"enabled"`
+	Title       string                     `json:"title"`
+	Description string                     `json:"description"`
+	Display     QuotaStatusDisplayConfig   `json:"display"`
+	UpdatedAt   time.Time                  `json:"updated_at"`
+	Groups      []QuotaStatusGroup         `json:"groups"`
 }
 
 type QuotaStatusService struct {
@@ -83,7 +118,14 @@ func defaultQuotaStatusConfig() QuotaStatusConfig {
 	return QuotaStatusConfig{
 		Title:       "账号额度状态",
 		Description: "查看各渠道账号的额度使用情况。",
-		Groups:      []QuotaStatusGroupConfig{},
+		Display: QuotaStatusDisplayConfig{
+			ShowRateMultiplier:    true,
+			ShowModelDistribution: true,
+			ShowDailyCurve:        true,
+			ShowSchedulingQuota:   true,
+			CurveDays:             7,
+		},
+		Groups: []QuotaStatusGroupConfig{},
 	}
 }
 
@@ -129,6 +171,12 @@ func normalizeQuotaStatusConfig(config *QuotaStatusConfig) {
 	config.Description = strings.TrimSpace(config.Description)
 	if config.Title == "" {
 		config.Title = defaultQuotaStatusConfig().Title
+	}
+	if config.Display.CurveDays <= 0 {
+		config.Display.CurveDays = 7
+	}
+	if config.Display.CurveDays > 30 {
+		config.Display.CurveDays = 30
 	}
 	if config.Groups == nil {
 		config.Groups = []QuotaStatusGroupConfig{}
@@ -232,6 +280,7 @@ func (s *QuotaStatusService) GetSnapshot(ctx context.Context) (QuotaStatusSnapsh
 		Enabled:     config.Enabled,
 		Title:       config.Title,
 		Description: config.Description,
+		Display:     config.Display,
 		UpdatedAt:   time.Now(),
 		Groups:      []QuotaStatusGroup{},
 	}
@@ -267,6 +316,10 @@ func (s *QuotaStatusService) GetSnapshot(ctx context.Context) (QuotaStatusSnapsh
 		results := make([]*QuotaStatusAccount, len(groupConfig.Accounts))
 		var wg sync.WaitGroup
 		semaphore := make(chan struct{}, 8)
+		curveDays := config.Display.CurveDays
+		if curveDays <= 0 {
+			curveDays = 7
+		}
 		for index, item := range groupConfig.Accounts {
 			account := accountByID[item.AccountID]
 			if account == nil || !quotaStatusAccountBelongsToGroup(account, groupConfig.GroupID) {
@@ -285,12 +338,29 @@ func (s *QuotaStatusService) GetSnapshot(ctx context.Context) (QuotaStatusSnapsh
 				if item.ShowName {
 					name = quotaStatusFirstNonEmpty(item.DisplayName, account.Name)
 				}
-				results[index] = &QuotaStatusAccount{
-					Name:       name,
-					Platform:   account.Platform,
-					Status:     publicAccountStatus(account),
-					Dimensions: buildQuotaStatusDimensions(account, usage),
+				rateMult := 1.0
+				if account.RateMultiplier != nil {
+					rateMult = *account.RateMultiplier
 				}
+				result := &QuotaStatusAccount{
+					Name:           name,
+					Platform:       account.Platform,
+					Type:           account.Type,
+					Status:         publicAccountStatus(account),
+					RateMultiplier: rateMult,
+					Schedulable:    account.Schedulable,
+					Priority:       account.Priority,
+					Dimensions:     buildQuotaStatusDimensions(account, usage),
+				}
+				// 每日调度曲线
+				if config.Display.ShowDailyCurve {
+					result.DailyCurve = s.buildDailyCurve(ctx, account, curveDays)
+				}
+				// 模型分布
+				if config.Display.ShowModelDistribution {
+					result.ModelDistribution = s.buildModelDistribution(ctx, account, curveDays)
+				}
+				results[index] = result
 			}(index, account, accountConfigByID[account.ID])
 		}
 		wg.Wait()
@@ -387,6 +457,65 @@ func buildQuotaStatusDimensions(account *Account, usage *UsageInfo) []QuotaStatu
 		}
 	}
 	return dimensions
+}
+
+// buildDailyCurve 构建账号近 N 天的每日用量曲线
+func (s *QuotaStatusService) buildDailyCurve(ctx context.Context, account *Account, days int) []QuotaStatusCurvePoint {
+	if s.accountUsageService == nil || days <= 0 {
+		return nil
+	}
+	now := timezone.Now()
+	endTime := timezone.StartOfDay(now.AddDate(0, 0, 1))
+	startTime := timezone.StartOfDay(now.AddDate(0, 0, -days+1))
+
+	stats, err := s.accountUsageService.GetAccountUsageStats(ctx, account.ID, startTime, endTime)
+	if err != nil {
+		return nil
+	}
+	curve := make([]QuotaStatusCurvePoint, 0, len(stats.History))
+	for _, h := range stats.History {
+		curve = append(curve, QuotaStatusCurvePoint{
+			Date:     h.Date,
+			Label:    h.Label,
+			Cost:     h.ActualCost,
+			Requests: h.Requests,
+			Tokens:   h.Tokens,
+		})
+	}
+	return curve
+}
+
+// buildModelDistribution 构建账号近 N 天的模型分布
+func (s *QuotaStatusService) buildModelDistribution(ctx context.Context, account *Account, days int) []QuotaStatusModelStat {
+	if s.accountUsageService == nil || days <= 0 {
+		return nil
+	}
+	now := timezone.Now()
+	endTime := timezone.StartOfDay(now.AddDate(0, 0, 1))
+	startTime := timezone.StartOfDay(now.AddDate(0, 0, -days+1))
+
+	stats, err := s.accountUsageService.GetAccountUsageStats(ctx, account.ID, startTime, endTime)
+	if err != nil {
+		return nil
+	}
+	// 按 actual_cost 降序排列，取前 10 个模型
+	sort.Slice(stats.Models, func(i, j int) bool {
+		return stats.Models[i].ActualCost > stats.Models[j].ActualCost
+	})
+	limit := len(stats.Models)
+	if limit > 10 {
+		limit = 10
+	}
+	result := make([]QuotaStatusModelStat, 0, limit)
+	for _, m := range stats.Models[:limit] {
+		result = append(result, QuotaStatusModelStat{
+			Model:      m.Model,
+			Requests:   m.Requests,
+			Tokens:     m.TotalTokens,
+			ActualCost: m.ActualCost,
+		})
+	}
+	return result
 }
 
 func quotaStatusFirstNonEmpty(values ...string) string {

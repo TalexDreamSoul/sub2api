@@ -42,6 +42,53 @@
         </div>
       </div>
 
+      <!-- 展示配置 -->
+      <div class="card">
+        <div class="border-b border-gray-100 px-5 py-4 dark:border-dark-700 sm:px-6">
+          <h2 class="text-lg font-semibold text-gray-900 dark:text-white">
+            {{ t('admin.quotaStatus.display.title') }}
+          </h2>
+          <p class="mt-1 text-sm text-gray-500 dark:text-gray-400">
+            {{ t('admin.quotaStatus.display.description') }}
+          </p>
+        </div>
+        <div class="grid gap-4 p-5 sm:grid-cols-2 sm:p-6">
+          <div class="flex items-center justify-between rounded-lg border border-gray-200 p-4 dark:border-dark-700">
+            <div>
+              <div class="text-sm font-medium text-gray-900 dark:text-white">{{ t('admin.quotaStatus.display.showRateMultiplier') }}</div>
+              <div class="text-xs text-gray-500 dark:text-gray-400">{{ t('admin.quotaStatus.display.showRateMultiplierDesc') }}</div>
+            </div>
+            <Toggle v-model="form.display.show_rate_multiplier" />
+          </div>
+          <div class="flex items-center justify-between rounded-lg border border-gray-200 p-4 dark:border-dark-700">
+            <div>
+              <div class="text-sm font-medium text-gray-900 dark:text-white">{{ t('admin.quotaStatus.display.showModelDistribution') }}</div>
+              <div class="text-xs text-gray-500 dark:text-gray-400">{{ t('admin.quotaStatus.display.showModelDistributionDesc') }}</div>
+            </div>
+            <Toggle v-model="form.display.show_model_distribution" />
+          </div>
+          <div class="flex items-center justify-between rounded-lg border border-gray-200 p-4 dark:border-dark-700">
+            <div>
+              <div class="text-sm font-medium text-gray-900 dark:text-white">{{ t('admin.quotaStatus.display.showDailyCurve') }}</div>
+              <div class="text-xs text-gray-500 dark:text-gray-400">{{ t('admin.quotaStatus.display.showDailyCurveDesc') }}</div>
+            </div>
+            <Toggle v-model="form.display.show_daily_curve" />
+          </div>
+          <div class="flex items-center justify-between rounded-lg border border-gray-200 p-4 dark:border-dark-700">
+            <div>
+              <div class="text-sm font-medium text-gray-900 dark:text-white">{{ t('admin.quotaStatus.display.showSchedulingQuota') }}</div>
+              <div class="text-xs text-gray-500 dark:text-gray-400">{{ t('admin.quotaStatus.display.showSchedulingQuotaDesc') }}</div>
+            </div>
+            <Toggle v-model="form.display.show_scheduling_quota" />
+          </div>
+          <div class="sm:col-span-2">
+            <label class="input-label">{{ t('admin.quotaStatus.display.curveDays') }}</label>
+            <p class="mb-2 text-xs text-gray-500 dark:text-gray-400">{{ t('admin.quotaStatus.display.curveDaysDesc') }}</p>
+            <input v-model.number="form.display.curve_days" type="number" min="1" max="30" class="input max-w-[120px]" />
+          </div>
+        </div>
+      </div>
+
       <div class="card">
         <div class="border-b border-gray-100 px-5 py-4 dark:border-dark-700 sm:px-6">
           <h2 class="text-lg font-semibold text-gray-900 dark:text-white">
@@ -215,7 +262,18 @@ const addingGroup = ref(false)
 const groups = ref<AdminGroup[]>([])
 const groupRows = ref<GroupRow[]>([])
 const newGroupID = ref<number | null>(null)
-const form = reactive({ enabled: false, title: '', description: '' })
+const form = reactive({
+  enabled: false,
+  title: '',
+  description: '',
+  display: {
+    show_rate_multiplier: true,
+    show_model_distribution: true,
+    show_daily_curve: true,
+    show_scheduling_quota: true,
+    curve_days: 7,
+  },
+})
 
 const publicURL = computed(() => `${window.location.origin}/quota-status`)
 const usedGroupIDs = computed(() => new Set(groupRows.value.map(row => row.group.id)))
@@ -282,6 +340,13 @@ async function load() {
     form.enabled = config.enabled
     form.title = config.title
     form.description = config.description
+    if (config.display) {
+      form.display.show_rate_multiplier = config.display.show_rate_multiplier ?? true
+      form.display.show_model_distribution = config.display.show_model_distribution ?? true
+      form.display.show_daily_curve = config.display.show_daily_curve ?? true
+      form.display.show_scheduling_quota = config.display.show_scheduling_quota ?? true
+      form.display.curve_days = config.display.curve_days ?? 7
+    }
     const groupByID = new Map(allGroups.map(group => [group.id, group]))
     groupRows.value = await Promise.all(config.groups
       .map(saved => ({ saved, group: groupByID.get(saved.group_id) }))
@@ -321,6 +386,13 @@ function toConfig(): QuotaStatusConfig {
     enabled: form.enabled,
     title: form.title.trim(),
     description: form.description.trim(),
+    display: {
+      show_rate_multiplier: form.display.show_rate_multiplier,
+      show_model_distribution: form.display.show_model_distribution,
+      show_daily_curve: form.display.show_daily_curve,
+      show_scheduling_quota: form.display.show_scheduling_quota,
+      curve_days: form.display.curve_days,
+    },
     groups: groupRows.value.map(row => ({
       id: row.key,
       group_id: row.group.id,

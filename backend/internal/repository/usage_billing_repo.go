@@ -212,18 +212,6 @@ func (r *usageBillingRepository) applyUsageBillingEffects(ctx context.Context, t
 	return nil
 }
 
-func insertSubscriptionAccountUsageLedger(ctx context.Context, tx *sql.Tx, cmd *service.UsageBillingCommand) error {
-	if cmd == nil || cmd.SubscriptionID == nil {
-		return nil
-	}
-	_, err := tx.ExecContext(ctx, `
-		INSERT INTO subscription_account_usage_ledger
-			(request_id, api_key_id, account_id, subscription_id, actual_cost_usd)
-		VALUES ($1, $2, $3, $4, $5)
-	`, cmd.RequestID, cmd.APIKeyID, cmd.AccountID, *cmd.SubscriptionID, cmd.SubscriptionCost)
-	return err
-}
-
 func incrementUsageBillingSubscription(ctx context.Context, tx *sql.Tx, subscriptionID int64, costUSD float64) error {
 	const updateSQL = `
 		UPDATE user_subscriptions us

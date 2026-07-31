@@ -23,12 +23,13 @@ type accountResetRefundFixture struct {
 	apiKeyID       int64
 	accountID      int64
 	subscriptionID int64
+	accountIDs     []int64
 	dayStart       time.Time
 	weekStart      time.Time
 	monthStart     time.Time
 }
 
-func newAccountResetRefundFixture(t *testing.T, daily, weekly, monthly float64) accountResetRefundFixture {
+func newAccountResetRefundFixture(t *testing.T, daily, weekly, monthly float64) *accountResetRefundFixture {
 	t.Helper()
 	ctx := context.Background()
 	client := testEntClient(t)
@@ -61,11 +62,38 @@ func newAccountResetRefundFixture(t *testing.T, daily, weekly, monthly float64) 
 	})
 
 	now := time.Now().UTC()
-	fixture := accountResetRefundFixture{
+	fixture := &accountResetRefundFixture{
 		userID: user.ID, groupID: group.ID, apiKeyID: apiKey.ID,
 		accountID: account.ID, subscriptionID: subscription.ID,
-		dayStart: now.Add(-6 * time.Hour), weekStart: now.Add(-48 * time.Hour), monthStart: now.Add(-20 * 24 * time.Hour),
+		accountIDs: []int64{account.ID},
+		dayStart:   now.Add(-6 * time.Hour), weekStart: now.Add(-48 * time.Hour), monthStart: now.Add(-20 * 24 * time.Hour),
 	}
+	t.Cleanup(func() {
+		ctx := context.Background()
+		tx, err := integrationDB.BeginTx(ctx, nil)
+		require.NoError(t, err)
+		defer func() { _ = tx.Rollback() }()
+
+		accountIDs := pq.Array(fixture.accountIDs)
+		for _, stmt := range []struct {
+			query string
+			arg   any
+		}{
+			{`DELETE FROM account_reset_subscription_adjustments WHERE account_id = ANY($1)`, accountIDs},
+			{`DELETE FROM subscription_account_usage_ledger WHERE account_id = ANY($1)`, accountIDs},
+			{`DELETE FROM account_reset_operations WHERE account_id = ANY($1)`, accountIDs},
+			{`DELETE FROM usage_logs WHERE user_id = $1`, fixture.userID},
+			{`DELETE FROM api_keys WHERE id = $1`, fixture.apiKeyID},
+			{`DELETE FROM user_subscriptions WHERE id = $1`, fixture.subscriptionID},
+			{`DELETE FROM accounts WHERE id = ANY($1)`, accountIDs},
+			{`DELETE FROM groups WHERE id = $1`, fixture.groupID},
+			{`DELETE FROM users WHERE id = $1`, fixture.userID},
+		} {
+			_, err = tx.ExecContext(ctx, stmt.query, stmt.arg)
+			require.NoError(t, err)
+		}
+		require.NoError(t, tx.Commit())
+	})
 	_, err := integrationDB.ExecContext(ctx, `UPDATE user_subscriptions
 		SET daily_window_start=$2, weekly_window_start=$3, monthly_window_start=$4
 		WHERE id=$1`, fixture.subscriptionID, fixture.dayStart, fixture.weekStart, fixture.monthStart)
@@ -73,7 +101,11 @@ func newAccountResetRefundFixture(t *testing.T, daily, weekly, monthly float64) 
 	return fixture
 }
 
-func (f accountResetRefundFixture) addUsage(t *testing.T, accountID int64, billingType int8, cost float64, createdAt time.Time) string {
+func (f *accountResetRefundFixture) trackAccount(accountID int64) {
+	f.accountIDs = append(f.accountIDs, accountID)
+}
+
+func (f *accountResetRefundFixture) addUsage(t *testing.T, accountID int64, billingType int8, cost float64, createdAt time.Time) string {
 	t.Helper()
 	requestID := uuid.NewString()
 	_, err := testEntClient(t).UsageLog.Create().
@@ -121,6 +153,7 @@ func TestAccountResetRefundUsesAuthoritativeLedgerAndIsIdempotent(t *testing.T) 
 	fixture.addUsage(t, fixture.accountID, service.BillingTypeSubscription, 4, time.Now().UTC().Add(-time.Minute))
 	fixture.addUsage(t, fixture.accountID, service.BillingTypeBalance, 2, time.Now().UTC().Add(-time.Minute))
 	other := mustCreateAccount(t, testEntClient(t), &service.Account{Name: "account-reset-other-" + uuid.NewString()})
+	fixture.trackAccount(other.ID)
 	fixture.addUsage(t, other.ID, service.BillingTypeSubscription, 3, time.Now().UTC().Add(-time.Minute))
 
 	repo := NewAccountResetRepository(integrationDB)

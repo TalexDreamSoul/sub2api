@@ -63,7 +63,7 @@ func (s *FeishuNotificationService) renderFeishuChannels(ctx context.Context) (s
 		return "", err
 	}
 	var out strings.Builder
-	out.WriteString("全局渠道状态")
+	_, _ = out.WriteString("全局渠道状态")
 	for i, monitor := range monitors {
 		if i >= 5 {
 			fmt.Fprintf(&out, "\n另有 %d 个渠道，请在面板查看。", len(monitors)-i)
@@ -105,9 +105,9 @@ func (s *FeishuNotificationService) renderFeishuSubscriptions(ctx context.Contex
 	}
 	var out strings.Builder
 	if includeQuota {
-		out.WriteString("订阅额度")
+		_, _ = out.WriteString("订阅额度")
 	} else {
-		out.WriteString("有效订阅")
+		_, _ = out.WriteString("有效订阅")
 	}
 	for i := range subs {
 		if i >= 5 {
@@ -152,14 +152,14 @@ func (s *FeishuNotificationService) renderFeishuAPIKeys(ctx context.Context, use
 		return "当前没有 API Key。", nil
 	}
 	var out strings.Builder
-	out.WriteString("API Key（仅显示后四位）")
+	_, _ = out.WriteString("API Key（仅显示后四位）")
 	for i := range keys {
 		key := &keys[i]
 		fmt.Fprintf(&out, "\n\n%s · ****%s\n状态：%s", key.Name, opaqueLastFour(key.Key), key.Status)
 		if key.Quota > 0 {
 			fmt.Fprintf(&out, "\n总额度：$%.2f / $%.2f", key.QuotaUsed, key.Quota)
 		} else {
-			out.WriteString("\n总额度：未配置")
+			_, _ = out.WriteString("\n总额度：未配置")
 		}
 		if key.ExpiresAt != nil {
 			fmt.Fprintf(&out, "\n到期：%s", key.ExpiresAt.Local().Format("2006-01-02 15:04"))

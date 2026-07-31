@@ -492,10 +492,6 @@ func (s *FeishuNotificationService) sendInteractiveCardWithPreferenceAndUUID(ctx
 	return s.sendInteractiveCardToOpenIDWithUUID(ctx, cfg, userID, binding.OpenID, card, messageUUID)
 }
 
-func (s *FeishuNotificationService) sendInteractiveCardToOpenID(ctx context.Context, cfg FeishuNotificationConfig, userID int64, openID string, card map[string]any) (string, error) {
-	return s.sendInteractiveCardToOpenIDWithUUID(ctx, cfg, userID, openID, card, "")
-}
-
 func (s *FeishuNotificationService) sendInteractiveCardToOpenIDWithUUID(ctx context.Context, cfg FeishuNotificationConfig, userID int64, openID string, card map[string]any, messageUUID string) (string, error) {
 	openID = strings.TrimSpace(openID)
 	if openID == "" {

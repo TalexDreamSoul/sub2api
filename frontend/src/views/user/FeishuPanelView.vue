@@ -42,13 +42,13 @@
           <div class="rounded-xl border border-gray-200 bg-white p-4 dark:border-dark-700 dark:bg-dark-800">
             <p class="text-xs text-gray-500 dark:text-gray-400">{{ localText('活跃订阅', 'Active subscriptions') }}</p>
             <p class="mt-1 text-2xl font-semibold text-gray-900 dark:text-white">
-              {{ activeSubscriptions.length }}
+              {{ subscriptionLoadFailed ? '—' : activeSubscriptions.length }}
             </p>
           </div>
           <div class="rounded-xl border border-gray-200 bg-white p-4 dark:border-dark-700 dark:bg-dark-800">
             <p class="text-xs text-gray-500 dark:text-gray-400">{{ localText('API Key', 'API keys') }}</p>
             <p class="mt-1 text-2xl font-semibold text-gray-900 dark:text-white">
-              {{ apiKeyCount }}
+              {{ apiKeyLoadFailed ? '—' : apiKeyCount }}
             </p>
           </div>
         </div>
@@ -88,6 +88,12 @@
                 {{ notificationEnabled ? localText('关闭通知', 'Disable') : localText('开启通知', 'Enable') }}
               </button>
             </div>
+            <div v-if="notificationStatus?.bound" class="divide-y divide-gray-100 border-t border-gray-100 dark:divide-dark-700 dark:border-dark-700">
+              <label v-for="item in preferenceItems" :key="item.key" class="flex items-center justify-between gap-4 py-3 text-sm text-gray-700 dark:text-gray-300">
+                <span>{{ item.label }}</span>
+                <input type="checkbox" class="h-4 w-4 rounded border-gray-300 text-primary-600 focus:ring-primary-500" :checked="notificationStatus?.preferences?.[item.key] !== false" :disabled="savingNotification || !notificationEnabled" @change="togglePreference(item.key, $event)" />
+              </label>
+            </div>
           </div>
         </div>
 
@@ -96,7 +102,10 @@
             <h2 class="font-medium text-gray-900 dark:text-white">{{ localText('订阅', 'Subscriptions') }}</h2>
           </div>
           <div class="divide-y divide-gray-100 dark:divide-dark-700">
-            <div v-if="activeSubscriptions.length === 0" class="px-5 py-6 text-sm text-gray-500 dark:text-gray-400">
+            <div v-if="subscriptionLoadFailed" class="px-5 py-6 text-sm text-red-600 dark:text-red-400">
+              {{ localText('订阅数据加载失败，请刷新重试。', 'Subscriptions failed to load. Refresh to retry.') }}
+            </div>
+            <div v-else-if="activeSubscriptions.length === 0" class="px-5 py-6 text-sm text-gray-500 dark:text-gray-400">
               {{ localText('当前没有活跃订阅。', 'No active subscriptions.') }}
             </div>
             <div
@@ -158,6 +167,8 @@ const savingNotification = ref(false)
 const notificationStatus = ref<FeishuNotificationStatus | null>(null)
 const activeSubscriptions = ref<UserSubscription[]>([])
 const apiKeyCount = ref(0)
+const subscriptionLoadFailed = ref(false)
+const apiKeyLoadFailed = ref(false)
 
 const user = computed(() => authStore.user)
 const localText = (zh: string, en: string) =>
@@ -166,6 +177,13 @@ const localText = (zh: string, en: string) =>
 const notificationEnabled = computed(() =>
   Boolean(notificationStatus.value?.notification_enabled ?? notificationStatus.value?.enabled)
 )
+const preferenceItems = computed(() => [
+  { key: 'balance' as const, label: localText('余额与充值', 'Balance and billing') },
+  { key: 'subscription' as const, label: localText('订阅状态', 'Subscription status') },
+  { key: 'quota' as const, label: localText('额度阈值', 'Quota thresholds') },
+  { key: 'security' as const, label: localText('安全与风控', 'Security and moderation') },
+  { key: 'channel' as const, label: localText('渠道故障与恢复', 'Channel incidents') },
+])
 
 const notificationBadge = computed(() => {
   if (!notificationStatus.value?.app_id) return localText('未配置', 'Not configured')
@@ -211,16 +229,20 @@ function formatSubscriptionExpiry(expiresAt?: string | null): string {
 async function refreshPanel() {
   loading.value = true
   try {
-    const [profile, notificationSettings, subscriptions, keys] = await Promise.all([
+    const [profile, notificationSettings] = await Promise.all([
       authStore.refreshUser(),
       userAPI.getNotificationSettings(),
-      subscriptionsAPI.getActiveSubscriptions().catch(() => [] as UserSubscription[]),
-      keysAPI.list(1, 1).catch(() => ({ total: 0 })),
+    ])
+    const [subscriptions, keys] = await Promise.allSettled([
+      subscriptionsAPI.getActiveSubscriptions(),
+      keysAPI.list(1, 1),
     ])
     authStore.user = profile
     notificationStatus.value = notificationSettings.feishu
-    activeSubscriptions.value = subscriptions
-    apiKeyCount.value = Number(keys.total || 0)
+    subscriptionLoadFailed.value = subscriptions.status === 'rejected'
+    apiKeyLoadFailed.value = keys.status === 'rejected'
+    if (subscriptions.status === 'fulfilled') activeSubscriptions.value = subscriptions.value
+    if (keys.status === 'fulfilled') apiKeyCount.value = Number(keys.value.total || 0)
     loaded.value = true
   } catch (err: unknown) {
     appStore.showError(extractApiErrorMessage(err, localText('加载飞书面板失败', 'Failed to load Feishu panel')))
@@ -252,6 +274,21 @@ async function toggleNotification() {
     appStore.showSuccess(localText('通知设置已保存', 'Notification setting saved'))
   } catch (err: unknown) {
     appStore.showError(extractApiErrorMessage(err, localText('保存通知设置失败', 'Failed to save notification setting')))
+  } finally {
+    savingNotification.value = false
+  }
+}
+
+async function togglePreference(category: 'balance' | 'subscription' | 'quota' | 'security' | 'channel', event: Event) {
+  if (!notificationStatus.value?.bound) return
+  savingNotification.value = true
+  try {
+    const updated = await userAPI.updateNotificationSettings({ feishu_preferences: { [category]: (event.target as HTMLInputElement).checked } })
+    notificationStatus.value = updated.feishu
+    appStore.showSuccess(localText('通知分类已保存', 'Notification category saved'))
+  } catch (err: unknown) {
+    appStore.showError(extractApiErrorMessage(err, localText('保存通知分类失败', 'Failed to save notification category')))
+    await refreshPanel()
   } finally {
     savingNotification.value = false
   }

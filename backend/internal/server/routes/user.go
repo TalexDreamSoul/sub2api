@@ -14,6 +14,7 @@ func RegisterUserRoutes(
 	h *handler.Handlers,
 	jwtAuth middleware.JWTAuthMiddleware,
 	auditLog middleware.AuditLogMiddleware,
+	stepUpAuth middleware.StepUpAuthMiddleware,
 	settingService *service.SettingService,
 	panelRateLimiter *middleware.PanelRateLimiter,
 ) {
@@ -89,7 +90,7 @@ func RegisterUserRoutes(
 			keys.PUT("/:id", h.APIKey.Update)
 			keys.POST("/:id/runtime/ips/remove", h.APIKey.RemoveRuntimeIP)
 			keys.POST("/:id/runtime/ips/clear", h.APIKey.ClearRuntimeIPs)
-			keys.DELETE("/:id", h.APIKey.Delete)
+			keys.DELETE("/:id", middleware.RequireStepUpAlways(stepUpAuth), h.APIKey.Delete)
 		}
 
 		// 用户可用分组（非管理员接口）

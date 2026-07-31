@@ -854,6 +854,34 @@ func (r *apiKeyRepository) GetRateLimitData(ctx context.Context, id int64) (resu
 	return data, rows.Err()
 }
 
+func (r *apiKeyRepository) ListFeishuExpiringAPIKeys(ctx context.Context, after, through time.Time, offset, limit int) ([]service.APIKey, error) {
+	if offset < 0 {
+		offset = 0
+	}
+	if limit <= 0 || limit > 10000 {
+		limit = 10000
+	}
+	models, err := r.activeQuery().
+		Where(
+			apikey.StatusEQ(service.StatusActive),
+			apikey.ExpiresAtNotNil(),
+			apikey.ExpiresAtGT(after),
+			apikey.ExpiresAtLTE(through),
+		).
+		Order(dbent.Asc(apikey.FieldExpiresAt), dbent.Asc(apikey.FieldID)).
+		Offset(offset).
+		Limit(limit).
+		All(ctx)
+	if err != nil {
+		return nil, err
+	}
+	items := make([]service.APIKey, 0, len(models))
+	for _, model := range models {
+		items = append(items, *apiKeyEntityToService(model))
+	}
+	return items, nil
+}
+
 func apiKeyEntityToService(m *dbent.APIKey) *service.APIKey {
 	if m == nil {
 		return nil

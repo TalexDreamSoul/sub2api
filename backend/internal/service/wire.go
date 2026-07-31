@@ -139,6 +139,13 @@ func ProvideOpenAIQuotaService(
 	return service
 }
 
+func ProvideAccountResetService(repo AccountResetRepository, accountRepo AccountRepository, billingCache *BillingCacheService, subscriptionService *SubscriptionService, notifier *FeishuNotificationService) *AccountResetService {
+	svc := NewAccountResetService(repo, accountRepo, billingCache, subscriptionService)
+	svc.notifier = notifier
+	svc.Start()
+	return svc
+}
+
 func ProvideAccountUsageService(
 	accountRepo AccountRepository,
 	usageLogRepo UsageLogRepository,
@@ -728,6 +735,7 @@ var ProviderSet = wire.NewSet(
 	ProvideClaudeTokenProvider,
 	NewAntigravityGatewayService,
 	ProvideRateLimitService,
+	ProvideAccountResetService,
 	ProvideAccountUsageService,
 	ProvideAccountTestService,
 	ProvideUpstreamBillingProbeService,
@@ -785,7 +793,7 @@ var ProviderSet = wire.NewSet(
 	NewModelPricingResolver,
 	NewContentModerationService,
 	NewAffiliateService,
-	NewFeishuNotificationService,
+	ProvideFeishuNotificationService,
 	ProvidePaymentConfigService,
 	ProvidePaymentService,
 	ProvidePaymentOrderExpiryService,
@@ -807,6 +815,30 @@ func ProvideUserPlatformQuotaUsageFlusher(cfg *config.Config, cache BillingCache
 // payment.EncryptionKey type instead of raw []byte, avoiding Wire ambiguity.
 func ProvidePaymentConfigService(entClient *dbent.Client, settingRepo SettingRepository, key payment.EncryptionKey) *PaymentConfigService {
 	return NewPaymentConfigService(entClient, settingRepo, []byte(key))
+}
+
+// ProvideFeishuNotificationService creates reliable Feishu delivery and starts
+// the outbox worker. Stop is wired into the application cleanup sequence.
+func ProvideFeishuNotificationService(
+	settingRepo SettingRepository,
+	bindingRepo FeishuUserIdentityRepository,
+	outboxRepo FeishuNotificationOutboxRepository,
+	eventRepo FeishuEventReceiptRepository,
+	userRepo UserRepository,
+	userSubRepo UserSubscriptionRepository,
+	apiKeyRepo APIKeyRepository,
+	preferenceRepo NotificationPreferenceRepository,
+	channelMonitorRepo ChannelMonitorRepository,
+) *FeishuNotificationService {
+	svc := NewFeishuNotificationService(settingRepo, bindingRepo, outboxRepo)
+	svc.eventRepo = eventRepo
+	svc.userRepo = userRepo
+	svc.userSubRepo = userSubRepo
+	svc.apiKeyRepo = apiKeyRepo
+	svc.preferenceRepo = preferenceRepo
+	svc.channelMonitorRepo = channelMonitorRepo
+	svc.Start()
+	return svc
 }
 
 // ProvideBalanceNotifyService creates BalanceNotifyService

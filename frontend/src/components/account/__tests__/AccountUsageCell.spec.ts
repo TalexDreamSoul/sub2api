@@ -113,6 +113,33 @@ describe('AccountUsageCell', () => {
     expect(getUsage).not.toHaveBeenCalled()
   })
 
+  it('renders gateway-observed 1/7/30-day usage for API key accounts', () => {
+    const wrapper = mount(AccountUsageCell, {
+      props: {
+        account: makeAccount({ platform: 'openai', type: 'apikey' }),
+        periodStats: {
+          today: { requests: 2, tokens: 100, cost: 1.2, standard_cost: 1, user_cost: 1.5 },
+          last_7_days: { requests: 8, tokens: 500, cost: 4.2, standard_cost: 4, user_cost: 5 },
+          last_30_days: { requests: 30, tokens: 2000, cost: 15.2, standard_cost: 14, user_cost: 18 },
+          last_used_at: '2026-07-23T14:30:00Z'
+        }
+      },
+      global: {
+        stubs: {
+          OllamaCloudUsageCell: true,
+          UsageProgressBar: true,
+          AccountQuotaInfo: true
+        }
+      }
+    })
+
+    expect(wrapper.get('[data-testid="local-period-stats"]').text()).toContain('2 req')
+    expect(wrapper.get('[data-testid="local-period-stats"]').text()).toContain('8 req')
+    expect(wrapper.get('[data-testid="local-period-stats"]').text()).toContain('30 req')
+    expect(wrapper.text()).toContain('admin.accounts.usageWindow.limitNotConfigured')
+    expect(getUsage).not.toHaveBeenCalled()
+  })
+
   it('Antigravity 图片用量会聚合新旧 image 模型', async () => {
     getUsage.mockResolvedValue({
       antigravity_quota: {
@@ -1273,7 +1300,7 @@ describe('AccountUsageCell', () => {
 		expect(wrapper.findAll('.animate-pulse').length).toBeGreaterThan(0)
   })
 
-  it('Key 账号在无 today stats 且无配额时显示兜底短横线', async () => {
+  it('Key 账号在无本站统计且无配额时明确显示数据源和配置状态', async () => {
 		const wrapper = mount(AccountUsageCell, {
 		  props: {
 		    account: makeAccount({
@@ -1297,7 +1324,8 @@ describe('AccountUsageCell', () => {
 
 		await flushPromises()
 
-		expect(wrapper.text().trim()).toBe('-')
+		expect(wrapper.text()).toContain('admin.accounts.usageWindow.limitNotConfigured')
+		expect(wrapper.text()).toContain('admin.accounts.usageWindow.upstreamUsageUnavailable')
   })
 
   it('Vertex 账号会在 Gemini 用量窗口里展示 today stats 徽章', async () => {

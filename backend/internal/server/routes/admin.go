@@ -51,7 +51,7 @@ func RegisterAdminRoutes(
 		registerAnnouncementRoutes(admin, h)
 
 		// OpenAI OAuth
-		registerOpenAIOAuthRoutes(admin, h)
+		registerOpenAIOAuthRoutes(admin, h, stepUpAuth)
 
 		// Gemini OAuth
 		registerGeminiOAuthRoutes(admin, h)
@@ -72,7 +72,7 @@ func RegisterAdminRoutes(
 		registerPromoCodeRoutes(admin, h)
 
 		// 系统设置
-		registerSettingsRoutes(admin, h)
+		registerSettingsRoutes(admin, h, stepUpAuth)
 
 		// 数据管理
 		registerDataManagementRoutes(admin, h, stepUpAuth)
@@ -87,7 +87,7 @@ func RegisterAdminRoutes(
 		registerSystemRoutes(admin, h)
 
 		// 订阅管理
-		registerSubscriptionRoutes(admin, h)
+		registerSubscriptionRoutes(admin, h, stepUpAuth)
 
 		// 使用记录管理
 		registerUsageRoutes(admin, h)
@@ -408,8 +408,9 @@ func registerAccountRoutes(admin *gin.RouterGroup, h *handler.Handlers, stepUpAu
 		accounts.GET("/:id/quota", h.Admin.OpenAIOAuth.QueryQuota)
 		accounts.GET("/:id/today-stats", h.Admin.Account.GetTodayStats)
 		accounts.POST("/today-stats/batch", h.Admin.Account.GetBatchTodayStats)
+		accounts.POST("/period-stats/batch", h.Admin.Account.GetBatchPeriodStats)
 		accounts.POST("/:id/clear-rate-limit", h.Admin.Account.ClearRateLimit)
-		accounts.POST("/:id/reset-quota", h.Admin.Account.ResetQuota)
+		accounts.POST("/:id/reset-quota", middleware.RequireStepUpAlways(stepUpAuth), h.Admin.Account.ResetQuota)
 		accounts.GET("/:id/temp-unschedulable", h.Admin.Account.GetTempUnschedulable)
 		accounts.DELETE("/:id/temp-unschedulable", h.Admin.Account.ClearTempUnschedulable)
 		accounts.POST("/:id/schedulable", h.Admin.Account.SetSchedulable)
@@ -454,7 +455,7 @@ func registerAnnouncementRoutes(admin *gin.RouterGroup, h *handler.Handlers) {
 	}
 }
 
-func registerOpenAIOAuthRoutes(admin *gin.RouterGroup, h *handler.Handlers) {
+func registerOpenAIOAuthRoutes(admin *gin.RouterGroup, h *handler.Handlers, stepUpAuth middleware.StepUpAuthMiddleware) {
 	openai := admin.Group("/openai")
 	{
 		openai.POST("/generate-auth-url", h.Admin.OpenAIOAuth.GenerateAuthURL)
@@ -464,7 +465,7 @@ func registerOpenAIOAuthRoutes(admin *gin.RouterGroup, h *handler.Handlers) {
 		openai.POST("/create-from-oauth", h.Admin.OpenAIOAuth.CreateAccountFromOAuth)
 		openai.POST("/create-from-codex-pat", h.Admin.OpenAIOAuth.CreateAccountFromCodexPAT)
 		openai.GET("/accounts/:id/quota", h.Admin.OpenAIOAuth.QueryQuota)
-		openai.POST("/accounts/:id/reset-quota", h.Admin.OpenAIOAuth.ResetQuota)
+		openai.POST("/accounts/:id/reset-quota", middleware.RequireStepUpAlways(stepUpAuth), h.Admin.OpenAIOAuth.ResetQuota)
 	}
 }
 
@@ -551,7 +552,7 @@ func registerPromoCodeRoutes(admin *gin.RouterGroup, h *handler.Handlers) {
 	}
 }
 
-func registerSettingsRoutes(admin *gin.RouterGroup, h *handler.Handlers) {
+func registerSettingsRoutes(admin *gin.RouterGroup, h *handler.Handlers, stepUpAuth middleware.StepUpAuthMiddleware) {
 	adminSettings := admin.Group("/settings")
 	{
 		adminSettings.GET("", h.Admin.Setting.GetSettings)
@@ -560,6 +561,10 @@ func registerSettingsRoutes(admin *gin.RouterGroup, h *handler.Handlers) {
 		adminSettings.POST("/test-smtp", h.Admin.Setting.TestSMTPConnection)
 		adminSettings.POST("/send-test-email", h.Admin.Setting.SendTestEmail)
 		adminSettings.POST("/feishu-notification/test", h.Admin.Setting.TestFeishuNotification)
+		adminSettings.POST("/feishu-notification/diagnose", h.Admin.Setting.DiagnoseFeishuNotification)
+		adminSettings.GET("/feishu-notification/users", h.Admin.Setting.ListFeishuBoundUsers)
+		adminSettings.GET("/feishu-notification/deliveries", h.Admin.Setting.ListFeishuNotificationDeliveries)
+		adminSettings.POST("/feishu-notification/messages", middleware.RequireStepUpAlways(stepUpAuth), h.Admin.Setting.SendFeishuAdminMessage)
 		adminSettings.GET("/email-templates", h.Admin.Setting.ListEmailTemplates)
 		adminSettings.POST("/email-template-preview", h.Admin.Setting.PreviewEmailTemplate)
 		adminSettings.GET("/email-templates/:event/:locale", h.Admin.Setting.GetEmailTemplate)
@@ -663,7 +668,7 @@ func registerSystemRoutes(admin *gin.RouterGroup, h *handler.Handlers) {
 	}
 }
 
-func registerSubscriptionRoutes(admin *gin.RouterGroup, h *handler.Handlers) {
+func registerSubscriptionRoutes(admin *gin.RouterGroup, h *handler.Handlers, stepUpAuth middleware.StepUpAuthMiddleware) {
 	subscriptions := admin.Group("/subscriptions")
 	{
 		subscriptions.GET("", h.Admin.Subscription.List)
@@ -672,10 +677,10 @@ func registerSubscriptionRoutes(admin *gin.RouterGroup, h *handler.Handlers) {
 		subscriptions.POST("/assign", h.Admin.Subscription.Assign)
 		subscriptions.POST("/bulk-assign", h.Admin.Subscription.BulkAssign)
 		subscriptions.POST("/:id/extend", h.Admin.Subscription.Extend)
-		subscriptions.POST("/:id/reset-quota", h.Admin.Subscription.ResetQuota)
-		subscriptions.POST("/:id/revoke", h.Admin.Subscription.Revoke)
+		subscriptions.POST("/:id/reset-quota", middleware.RequireStepUpAlways(stepUpAuth), h.Admin.Subscription.ResetQuota)
+		subscriptions.POST("/:id/revoke", middleware.RequireStepUpAlways(stepUpAuth), h.Admin.Subscription.Revoke)
 		subscriptions.POST("/:id/restore", h.Admin.Subscription.Restore)
-		subscriptions.DELETE("/:id", h.Admin.Subscription.Revoke)
+		subscriptions.DELETE("/:id", middleware.RequireStepUpAlways(stepUpAuth), h.Admin.Subscription.Revoke)
 	}
 
 	// 分组下的订阅列表

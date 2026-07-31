@@ -25,6 +25,14 @@ func RegisterAuthRoutes(
 	// 创建速率限制器
 	rateLimiter := middleware.NewRateLimiter(redisClient)
 
+	// 飞书事件回调独立于登录模式；验签和事件 ID 幂等由业务层完成。
+	v1.POST("/integrations/feishu/events",
+		rateLimiter.LimitWithOptions("feishu-events", 120, time.Minute, middleware.RateLimitOptions{
+			FailureMode: middleware.RateLimitFailOpen,
+		}),
+		h.Auth.FeishuEventCallback,
+	)
+
 	// 公开接口
 	auth := v1.Group("/auth")
 	auth.Use(servermiddleware.BackendModeAuthGuard(settingService))

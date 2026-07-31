@@ -6,6 +6,7 @@ import (
 	"errors"
 	"log/slog"
 	"net/http"
+	"net/url"
 	"reflect"
 	"strings"
 
@@ -93,12 +94,14 @@ type UpdateSettingsRequest struct {
 	FeishuConnectFrontendRedirectURL string `json:"feishu_connect_frontend_redirect_url"`
 
 	// Feishu Notification App
-	FeishuNotifyEnabled    bool   `json:"feishu_notify_enabled"`
-	FeishuNotifyAppID      string `json:"feishu_notify_app_id"`
-	FeishuNotifyAppSecret  string `json:"feishu_notify_app_secret"`
-	FeishuNotifyTokenURL   string `json:"feishu_notify_token_url"`
-	FeishuNotifyMessageURL string `json:"feishu_notify_message_url"`
-	FeishuNotifyPanelURL   string `json:"feishu_notify_panel_url"`
+	FeishuNotifyEnabled           bool   `json:"feishu_notify_enabled"`
+	FeishuNotifyAppID             string `json:"feishu_notify_app_id"`
+	FeishuNotifyAppSecret         string `json:"feishu_notify_app_secret"`
+	FeishuNotifyTokenURL          string `json:"feishu_notify_token_url"`
+	FeishuNotifyMessageURL        string `json:"feishu_notify_message_url"`
+	FeishuNotifyPanelURL          string `json:"feishu_notify_panel_url"`
+	FeishuNotifyVerificationToken string `json:"feishu_notify_verification_token"`
+	FeishuNotifyEncryptKey        string `json:"feishu_notify_encrypt_key"`
 
 	// WeChat Connect OAuth 登录
 	WeChatConnectEnabled             bool   `json:"wechat_connect_enabled"`
@@ -461,10 +464,47 @@ func omittedSettingKeys(sentFields map[string]json.RawMessage) service.OmittedSe
 	return omitted
 }
 
+func validateFeishuOfficialAPIURL(raw string) error {
+	parsed, err := url.Parse(strings.TrimSpace(raw))
+	if err != nil || parsed.Scheme != "https" || parsed.User != nil {
+		return errors.New("invalid Feishu API URL")
+	}
+	switch strings.ToLower(parsed.Hostname()) {
+	case "open.feishu.cn", "open.larksuite.com":
+		return nil
+	default:
+		return errors.New("untrusted Feishu API host")
+	}
+}
+
+func validateFeishuPanelURL(raw string) error {
+	raw = strings.TrimSpace(raw)
+	if strings.HasPrefix(raw, "/") && !strings.HasPrefix(raw, "//") {
+		return config.ValidateFrontendRedirectURL(raw)
+	}
+	parsed, err := url.Parse(raw)
+	if err != nil || parsed.Scheme != "https" || parsed.Host == "" || parsed.User != nil {
+		return errors.New("invalid Feishu panel URL")
+	}
+	return config.ValidateFrontendRedirectURL(raw)
+}
+
+func hasFeishuNotificationSettingFields(fields map[string]json.RawMessage) bool {
+	for key := range fields {
+		if strings.HasPrefix(key, "feishu_notify_") {
+			return true
+		}
+	}
+	return false
+}
+
 func (h *SettingHandler) UpdateSettings(c *gin.Context) {
 	var sentFields map[string]json.RawMessage
 	if err := c.ShouldBindBodyWith(&sentFields, binding.JSON); err != nil {
 		response.BadRequest(c, "Invalid request: "+err.Error())
+		return
+	}
+	if hasFeishuNotificationSettingFields(sentFields) && !middleware.EnforceStepUpAlways(c, h.totpService, h.userService) {
 		return
 	}
 	var req UpdateSettingsRequest
@@ -882,6 +922,14 @@ func (h *SettingHandler) UpdateSettings(c *gin.Context) {
 	if req.FeishuNotifyAppSecret == "" {
 		req.FeishuNotifyAppSecret = previousSettings.FeishuNotifyAppSecret
 	}
+	req.FeishuNotifyVerificationToken = strings.TrimSpace(req.FeishuNotifyVerificationToken)
+	if req.FeishuNotifyVerificationToken == "" {
+		req.FeishuNotifyVerificationToken = previousSettings.FeishuNotifyVerificationToken
+	}
+	req.FeishuNotifyEncryptKey = strings.TrimSpace(req.FeishuNotifyEncryptKey)
+	if req.FeishuNotifyEncryptKey == "" {
+		req.FeishuNotifyEncryptKey = previousSettings.FeishuNotifyEncryptKey
+	}
 	if req.FeishuNotifyEnabled {
 		req.FeishuNotifyAppID = firstNonEmpty(req.FeishuNotifyAppID, previousSettings.FeishuNotifyAppID)
 		if req.FeishuNotifyAppID == "" {
@@ -896,13 +944,13 @@ func (h *SettingHandler) UpdateSettings(c *gin.Context) {
 			"Feishu notification Token URL":   req.FeishuNotifyTokenURL,
 			"Feishu notification Message URL": req.FeishuNotifyMessageURL,
 		} {
-			if err := config.ValidateAbsoluteHTTPURL(rawURL); err != nil {
-				response.BadRequest(c, label+" must be an absolute http(s) URL")
+			if err := validateFeishuOfficialAPIURL(rawURL); err != nil {
+				response.BadRequest(c, label+" must use the official Feishu HTTPS API host")
 				return
 			}
 		}
-		if err := config.ValidateFrontendRedirectURL(req.FeishuNotifyPanelURL); err != nil {
-			response.BadRequest(c, "Feishu notification Panel URL is invalid")
+		if err := validateFeishuPanelURL(req.FeishuNotifyPanelURL); err != nil {
+			response.BadRequest(c, "Feishu notification Panel URL is invalid or insecure")
 			return
 		}
 	}
@@ -1516,6 +1564,8 @@ func (h *SettingHandler) UpdateSettings(c *gin.Context) {
 		FeishuNotifyTokenURL:                   req.FeishuNotifyTokenURL,
 		FeishuNotifyMessageURL:                 req.FeishuNotifyMessageURL,
 		FeishuNotifyPanelURL:                   req.FeishuNotifyPanelURL,
+		FeishuNotifyVerificationToken:          req.FeishuNotifyVerificationToken,
+		FeishuNotifyEncryptKey:                 req.FeishuNotifyEncryptKey,
 		WeChatConnectEnabled:                   req.WeChatConnectEnabled,
 		WeChatConnectAppID:                     req.WeChatConnectAppID,
 		WeChatConnectAppSecret:                 req.WeChatConnectAppSecret,
@@ -2097,6 +2147,8 @@ func (h *SettingHandler) UpdateSettings(c *gin.Context) {
 		FeishuNotifyTokenURL:                                   updatedSettings.FeishuNotifyTokenURL,
 		FeishuNotifyMessageURL:                                 updatedSettings.FeishuNotifyMessageURL,
 		FeishuNotifyPanelURL:                                   updatedSettings.FeishuNotifyPanelURL,
+		FeishuNotifyVerificationTokenConfigured:                updatedSettings.FeishuNotifyVerificationTokenConfigured,
+		FeishuNotifyEncryptKeyConfigured:                       updatedSettings.FeishuNotifyEncryptKeyConfigured,
 		WeChatConnectEnabled:                                   updatedSettings.WeChatConnectEnabled,
 		WeChatConnectAppID:                                     updatedSettings.WeChatConnectAppID,
 		WeChatConnectAppSecretConfigured:                       updatedSettings.WeChatConnectAppSecretConfigured,

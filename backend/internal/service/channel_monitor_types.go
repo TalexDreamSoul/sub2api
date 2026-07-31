@@ -114,6 +114,32 @@ type ChannelMonitorUpdateParams struct {
 	BodyOverride     *map[string]any
 }
 
+type ChannelMonitorIncidentObservation struct {
+	MonitorID     int64
+	MonitorName   string
+	Provider      string
+	Model         string
+	Status        string
+	LatencyMs     *int
+	CheckedAt     time.Time
+	Failed        bool
+	FailureTarget int
+}
+
+type ChannelMonitorNotificationEvent struct {
+	ID              int64
+	MonitorID       int64
+	IncidentVersion int64
+	EventKind       string
+	MonitorName     string
+	Provider        string
+	Model           string
+	ObservedStatus  string
+	LatencyMs       *int
+	CheckedAt       time.Time
+	Attempts        int
+}
+
 // CheckResult 单个模型一次检测的结果。
 type CheckResult struct {
 	Model         string

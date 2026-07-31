@@ -674,6 +674,7 @@
       @confirm="confirmResetQuota"
       @cancel="showResetQuotaConfirm = false"
     />
+    <TotpStepUpDialog v-if="showSensitiveStepUpDialog" :controller="sensitiveStepUp" />
     <!-- Subscription Guide Modal -->
     <teleport to="body">
       <transition name="modal">
@@ -766,12 +767,14 @@ import type { SimpleUser } from '@/api/admin/usage'
 import type { Column } from '@/components/common/types'
 import { formatDateTimeToMinute } from '@/utils/format'
 import { getPersistedPageSize } from '@/composables/usePersistedPageSize'
+import { useStepUp, isStepUpBlocked, isStepUpCancelled } from '@/composables/useStepUp'
 import AppLayout from '@/components/layout/AppLayout.vue'
 import TablePageLayout from '@/components/layout/TablePageLayout.vue'
 import DataTable from '@/components/common/DataTable.vue'
 import Pagination from '@/components/common/Pagination.vue'
 import BaseDialog from '@/components/common/BaseDialog.vue'
 import ConfirmDialog from '@/components/common/ConfirmDialog.vue'
+import TotpStepUpDialog from '@/components/auth/TotpStepUpDialog.vue'
 import EmptyState from '@/components/common/EmptyState.vue'
 import Select from '@/components/common/Select.vue'
 import GroupBadge from '@/components/common/GroupBadge.vue'
@@ -781,6 +784,8 @@ import { getRemainingDurationParts, isOneTimeDailyQuota, type RemainingDurationP
 
 const { t } = useI18n()
 const appStore = useAppStore()
+const sensitiveStepUp = useStepUp()
+const showSensitiveStepUpDialog = computed(() => sensitiveStepUp.visible.value)
 
 interface GroupOption {
   value: number
@@ -1269,14 +1274,20 @@ const handleRevoke = (subscription: UserSubscription) => {
 
 const confirmRevoke = async () => {
   if (!revokingSubscription.value) return
+  const subscriptionID = revokingSubscription.value.id
 
   try {
-    await adminAPI.subscriptions.revoke(revokingSubscription.value.id)
+    await sensitiveStepUp.run(() => adminAPI.subscriptions.revoke(subscriptionID))
     appStore.showSuccess(t('admin.subscriptions.subscriptionRevoked'))
     showRevokeDialog.value = false
     revokingSubscription.value = null
     loadSubscriptions()
   } catch (error: any) {
+    if (isStepUpCancelled(error)) return
+    if (isStepUpBlocked(error)) {
+      appStore.showError(t('stepUp.notEnabled'))
+      return
+    }
     appStore.showError(error.response?.data?.detail || t('admin.subscriptions.failedToRevoke'))
     console.error('Error revoking subscription:', error)
   }
@@ -1310,14 +1321,20 @@ const handleResetQuota = (subscription: UserSubscription) => {
 const confirmResetQuota = async () => {
   if (!resettingSubscription.value) return
   if (resettingQuota.value) return
+  const subscriptionID = resettingSubscription.value.id
   resettingQuota.value = true
   try {
-    await adminAPI.subscriptions.resetQuota(resettingSubscription.value.id, { daily: true, weekly: true, monthly: true })
+    await sensitiveStepUp.run(() => adminAPI.subscriptions.resetQuota(subscriptionID, { daily: true, weekly: true, monthly: true }))
     appStore.showSuccess(t('admin.subscriptions.quotaResetSuccess'))
     showResetQuotaConfirm.value = false
     resettingSubscription.value = null
     await loadSubscriptions()
   } catch (error: any) {
+    if (isStepUpCancelled(error)) return
+    if (isStepUpBlocked(error)) {
+      appStore.showError(t('stepUp.notEnabled'))
+      return
+    }
     appStore.showError(error.response?.data?.detail || t('admin.subscriptions.failedToResetQuota'))
     console.error('Error resetting quota:', error)
   } finally {

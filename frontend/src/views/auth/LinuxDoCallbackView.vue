@@ -262,14 +262,17 @@ import {
 
 const route = useRoute()
 const router = useRouter()
-const { t } = useI18n()
+const { t, locale } = useI18n()
 
 const authStore = useAuthStore()
 const appStore = useAppStore()
 const provider = computed<'linuxdo' | 'feishu'>(() =>
   route.meta?.pendingOAuthProvider === 'feishu' ? 'feishu' : 'linuxdo'
 )
-const providerName = computed(() => (provider.value === 'feishu' ? '飞书' : 'LinuxDo'))
+const providerName = computed(() => {
+  if (provider.value !== 'feishu') return 'LinuxDo'
+  return String(locale.value || '').startsWith('zh') ? '飞书' : 'Feishu'
+})
 const providerNameText = computed(() => providerName.value)
 
 const isProcessing = ref(true)

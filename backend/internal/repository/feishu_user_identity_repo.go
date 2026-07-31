@@ -23,20 +23,42 @@ func (r *feishuUserIdentityRepository) UpsertFeishuUserIdentityBinding(ctx conte
 	if r == nil || r.db == nil {
 		return nil, service.ErrFeishuNotificationDisabled
 	}
+	input.AppID = strings.TrimSpace(input.AppID)
+	input.TenantKey = strings.TrimSpace(input.TenantKey)
+	input.OpenID = strings.TrimSpace(input.OpenID)
+	input.UnionID = strings.TrimSpace(input.UnionID)
 	input.Purpose = strings.TrimSpace(input.Purpose)
 	if input.Purpose == "" {
 		input.Purpose = service.FeishuIdentityPurposeNotify
-	}
-	if err := r.ensureFeishuUnionOwner(ctx, input.UserID, input.TenantKey, input.UnionID, input.Purpose); err != nil {
-		return nil, err
 	}
 	metadata, err := json.Marshal(normalizeFeishuBindingMetadata(input.Metadata))
 	if err != nil {
 		return nil, err
 	}
+	tx, err := r.db.BeginTx(ctx, nil)
+	if err != nil {
+		return nil, err
+	}
+	defer func() { _ = tx.Rollback() }()
+	if input.UnionID != "" {
+		lockKey := strings.Join([]string{input.AppID, input.TenantKey, input.UnionID, input.Purpose}, "\x00")
+		if _, err := tx.ExecContext(ctx, `SELECT pg_advisory_xact_lock(hashtextextended($1, 0))`, lockKey); err != nil {
+			return nil, err
+		}
+		var totalOwners, matchingOwners int
+		if err := tx.QueryRowContext(ctx, `
+SELECT COUNT(*), COUNT(*) FILTER (WHERE user_id = $5)
+FROM user_feishu_identity_bindings
+WHERE app_id = $1 AND tenant_key = $2 AND union_id = $3 AND purpose = $4`, input.AppID, input.TenantKey, input.UnionID, input.Purpose, input.UserID).Scan(&totalOwners, &matchingOwners); err != nil {
+			return nil, err
+		}
+		if totalOwners != matchingOwners {
+			return nil, service.ErrFeishuNotificationConflict
+		}
+	}
 	var binding service.FeishuUserIdentityBinding
 	var rawMetadata []byte
-	err = r.db.QueryRowContext(ctx, `
+	err = tx.QueryRowContext(ctx, `
 INSERT INTO user_feishu_identity_bindings (
 	user_id, app_id, tenant_key, open_id, union_id, purpose,
 	notification_enabled, metadata, bound_at, last_seen_at, created_at, updated_at
@@ -55,10 +77,10 @@ DO UPDATE SET
 	updated_at = NOW()
 RETURNING user_id, app_id, tenant_key, open_id, union_id, purpose, notification_enabled, metadata, bound_at, last_seen_at`,
 		input.UserID,
-		strings.TrimSpace(input.AppID),
-		strings.TrimSpace(input.TenantKey),
-		strings.TrimSpace(input.OpenID),
-		strings.TrimSpace(input.UnionID),
+		input.AppID,
+		input.TenantKey,
+		input.OpenID,
+		input.UnionID,
 		input.Purpose,
 		input.NotificationEnabled,
 		string(metadata),
@@ -80,34 +102,11 @@ RETURNING user_id, app_id, tenant_key, open_id, union_id, purpose, notification_
 		}
 		return nil, err
 	}
+	if err := tx.Commit(); err != nil {
+		return nil, err
+	}
 	binding.Metadata = parseFeishuBindingMetadata(rawMetadata)
 	return &binding, nil
-}
-
-func (r *feishuUserIdentityRepository) ensureFeishuUnionOwner(ctx context.Context, userID int64, tenantKey, unionID, purpose string) error {
-	tenantKey = strings.TrimSpace(tenantKey)
-	unionID = strings.TrimSpace(unionID)
-	purpose = strings.TrimSpace(purpose)
-	if unionID == "" {
-		return nil
-	}
-	var existingUserID int64
-	err := r.db.QueryRowContext(ctx, `
-SELECT user_id
-FROM user_feishu_identity_bindings
-WHERE tenant_key = $1 AND union_id = $2 AND purpose = $3
-ORDER BY updated_at DESC
-LIMIT 1`, tenantKey, unionID, purpose).Scan(&existingUserID)
-	if errors.Is(err, sql.ErrNoRows) {
-		return nil
-	}
-	if err != nil {
-		return err
-	}
-	if existingUserID != userID {
-		return service.ErrFeishuNotificationConflict
-	}
-	return nil
 }
 
 func (r *feishuUserIdentityRepository) GetFeishuNotificationBinding(ctx context.Context, userID int64, appID string) (*service.FeishuUserIdentityBinding, error) {
@@ -123,7 +122,43 @@ func (r *feishuUserIdentityRepository) GetFeishuBindingByUnionID(ctx context.Con
 SELECT user_id, app_id, tenant_key, open_id, union_id, purpose, notification_enabled, metadata, bound_at, last_seen_at
 FROM user_feishu_identity_bindings
 WHERE app_id = $1 AND tenant_key = $2 AND union_id = $3 AND purpose = $4
-LIMIT 1`, strings.TrimSpace(appID), strings.TrimSpace(tenantKey), strings.TrimSpace(unionID), strings.TrimSpace(purpose))
+ORDER BY id
+LIMIT 2`, strings.TrimSpace(appID), strings.TrimSpace(tenantKey), strings.TrimSpace(unionID), strings.TrimSpace(purpose))
+}
+
+func (r *feishuUserIdentityRepository) GetFeishuBindingByOpenID(ctx context.Context, appID, tenantKey, openID, purpose string) (*service.FeishuUserIdentityBinding, error) {
+	return r.getBinding(ctx, `
+SELECT user_id, app_id, tenant_key, open_id, union_id, purpose, notification_enabled, metadata, bound_at, last_seen_at
+FROM user_feishu_identity_bindings
+WHERE app_id = $1 AND tenant_key = $2 AND open_id = $3 AND purpose = $4
+LIMIT 1`, strings.TrimSpace(appID), strings.TrimSpace(tenantKey), strings.TrimSpace(openID), strings.TrimSpace(purpose))
+}
+
+func (r *feishuUserIdentityRepository) ListFeishuBoundUsers(ctx context.Context, appID, search string, limit int) ([]service.FeishuBoundUser, error) {
+	if limit <= 0 || limit > 100 {
+		limit = 30
+	}
+	rows, err := r.db.QueryContext(ctx, `
+SELECT u.id,u.email,COALESCE(u.username,'')
+FROM user_feishu_identity_bindings b
+JOIN users u ON u.id=b.user_id AND u.deleted_at IS NULL
+WHERE b.app_id=$1 AND b.purpose='notify' AND b.notification_enabled=TRUE
+  AND ($2='' OR u.email ILIKE '%' || $2 || '%' OR COALESCE(u.username,'') ILIKE '%' || $2 || '%' OR u.id::text=$2)
+ORDER BY b.updated_at DESC,u.id
+LIMIT $3`, strings.TrimSpace(appID), strings.TrimSpace(search), limit)
+	if err != nil {
+		return nil, err
+	}
+	defer func() { _ = rows.Close() }()
+	items := make([]service.FeishuBoundUser, 0, limit)
+	for rows.Next() {
+		var item service.FeishuBoundUser
+		if err := rows.Scan(&item.ID, &item.Email, &item.Username); err != nil {
+			return nil, err
+		}
+		items = append(items, item)
+	}
+	return items, rows.Err()
 }
 
 func (r *feishuUserIdentityRepository) ListFeishuBindingsByUser(ctx context.Context, userID int64) ([]service.FeishuUserIdentityBinding, error) {
@@ -218,6 +253,9 @@ func (r *feishuUserIdentityRepository) getBinding(ctx context.Context, query str
 	if err != nil {
 		return nil, err
 	}
+	if rows.Next() {
+		return nil, service.ErrFeishuNotificationConflict
+	}
 	if err := rows.Err(); err != nil {
 		return nil, err
 	}
@@ -247,6 +285,35 @@ func scanFeishuBinding(scanner feishuBindingScanner) (*service.FeishuUserIdentit
 	}
 	binding.Metadata = parseFeishuBindingMetadata(rawMetadata)
 	return &binding, nil
+}
+
+func (r *feishuUserIdentityRepository) ListFeishuChannelRecipientUserIDs(ctx context.Context, appID string, afterUserID int64, limit int) ([]int64, error) {
+	if r == nil || r.db == nil {
+		return nil, service.ErrFeishuNotificationDisabled
+	}
+	if limit <= 0 || limit > 500 {
+		limit = 500
+	}
+	rows, err := r.db.QueryContext(ctx, `SELECT binding.user_id
+		FROM user_feishu_identity_bindings binding
+		LEFT JOIN user_notification_preferences preference
+		  ON preference.user_id=binding.user_id AND preference.channel='feishu' AND preference.category='channel'
+		WHERE binding.app_id=$1 AND binding.purpose=$2 AND binding.notification_enabled=TRUE
+		  AND binding.user_id>$3 AND COALESCE(preference.enabled,TRUE)=TRUE
+		ORDER BY binding.user_id LIMIT $4`, strings.TrimSpace(appID), service.FeishuIdentityPurposeNotify, afterUserID, limit)
+	if err != nil {
+		return nil, err
+	}
+	defer func() { _ = rows.Close() }()
+	ids := make([]int64, 0, limit)
+	for rows.Next() {
+		var id int64
+		if err := rows.Scan(&id); err != nil {
+			return nil, err
+		}
+		ids = append(ids, id)
+	}
+	return ids, rows.Err()
 }
 
 func normalizeFeishuBindingMetadata(in map[string]any) map[string]any {

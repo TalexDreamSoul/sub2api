@@ -152,6 +152,20 @@ func TestSnapshotCache_GetOrLoad_ConcurrentSingleflight(t *testing.T) {
 	require.Equal(t, int32(1), loads.Load())
 }
 
+func TestSnapshotCache_SetBoundsEntryCount(t *testing.T) {
+	c := newSnapshotCache(5 * time.Second)
+	c.maxEntries = 2
+
+	c.Set("first", 1)
+	c.Set("second", 2)
+	c.Set("third", 3)
+
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+	require.Len(t, c.items, 2)
+	require.Contains(t, c.items, "third")
+}
+
 func TestParseBoolQueryWithDefault(t *testing.T) {
 	tests := []struct {
 		name string

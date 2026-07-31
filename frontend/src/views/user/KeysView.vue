@@ -1064,6 +1064,8 @@
       @cancel="showDeleteDialog = false"
     />
 
+    <TotpStepUpDialog v-if="showDeleteStepUpDialog" :controller="deleteStepUp" />
+
     <!-- Reset Quota Confirmation Dialog -->
     <ConfirmDialog
       :show="showResetQuotaDialog"
@@ -1329,7 +1331,8 @@
 	import { useI18n } from 'vue-i18n'
 	import { useAppStore } from '@/stores/app'
 	import { useOnboardingStore } from '@/stores/onboarding'
-	import { useClipboard } from '@/composables/useClipboard'
+import { useClipboard } from '@/composables/useClipboard'
+import { useStepUp, isStepUpBlocked, isStepUpCancelled } from '@/composables/useStepUp'
 import { getPersistedPageSize } from '@/composables/usePersistedPageSize'
 
 const { t } = useI18n()
@@ -1341,6 +1344,7 @@ import TablePageLayout from '@/components/layout/TablePageLayout.vue'
 	import Pagination from '@/components/common/Pagination.vue'
 	import BaseDialog from '@/components/common/BaseDialog.vue'
 	import ConfirmDialog from '@/components/common/ConfirmDialog.vue'
+	import TotpStepUpDialog from '@/components/auth/TotpStepUpDialog.vue'
 	import EmptyState from '@/components/common/EmptyState.vue'
 	import Select from '@/components/common/Select.vue'
 	import SearchInput from '@/components/common/SearchInput.vue'
@@ -1384,6 +1388,8 @@ const appStore = useAppStore()
 const onboardingStore = useOnboardingStore()
 const authStore = useAuthStore()
 const { copyToClipboard: clipboardCopy } = useClipboard()
+const deleteStepUp = useStepUp()
+const showDeleteStepUpDialog = computed(() => deleteStepUp.visible.value)
 
 const allColumns = computed<Column[]>(() => [
   { key: 'name', label: t('common.name'), sortable: true },
@@ -2071,13 +2077,19 @@ const handleSubmit = async () => {
  */
 const handleDelete = async () => {
   if (!selectedKey.value) return
+  const keyID = selectedKey.value.id
 
   try {
-    await keysAPI.delete(selectedKey.value.id)
+    await deleteStepUp.run(() => keysAPI.delete(keyID))
     appStore.showSuccess(t('keys.keyDeletedSuccess'))
     showDeleteDialog.value = false
     loadApiKeys()
   } catch (error: any) {
+    if (isStepUpCancelled(error)) return
+    if (isStepUpBlocked(error)) {
+      appStore.showError(t('stepUp.notEnabled'))
+      return
+    }
     // 优先使用后端返回的错误消息，提供更具体的错误信息给用户
     const errorMsg = error?.message || t('keys.failedToDelete')
     appStore.showError(errorMsg)

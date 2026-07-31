@@ -6,13 +6,13 @@ import AccountsView from '../AccountsView.vue'
 const {
   listAccounts,
   listWithEtag,
-  getBatchTodayStats,
+  getBatchPeriodStats,
   getAllProxies,
   getAllGroups
 } = vi.hoisted(() => ({
   listAccounts: vi.fn(),
   listWithEtag: vi.fn(),
-  getBatchTodayStats: vi.fn(),
+  getBatchPeriodStats: vi.fn(),
   getAllProxies: vi.fn(),
   getAllGroups: vi.fn()
 }))
@@ -22,7 +22,7 @@ vi.mock('@/api/admin', () => ({
     accounts: {
       list: listAccounts,
       listWithEtag,
-      getBatchTodayStats,
+      getBatchPeriodStats,
       getUpstreamBillingProbeSettings: vi.fn().mockResolvedValue({ enabled: true, interval_minutes: 30 }),
       delete: vi.fn(),
       batchClearError: vi.fn(),
@@ -135,7 +135,7 @@ describe('admin AccountsView scheduler score column', () => {
 
     listAccounts.mockReset()
     listWithEtag.mockReset()
-    getBatchTodayStats.mockReset()
+    getBatchPeriodStats.mockReset()
     getAllProxies.mockReset()
     getAllGroups.mockReset()
 
@@ -188,7 +188,7 @@ describe('admin AccountsView scheduler score column', () => {
       etag: null,
       data: null
     })
-    getBatchTodayStats.mockResolvedValue({ stats: {} })
+    getBatchPeriodStats.mockResolvedValue({ stats: {} })
     getAllProxies.mockResolvedValue([])
     getAllGroups.mockResolvedValue([])
   })

@@ -18,10 +18,11 @@ type snapshotCacheEntry struct {
 }
 
 type snapshotCache struct {
-	mu    sync.RWMutex
-	ttl   time.Duration
-	items map[string]snapshotCacheEntry
-	sf    singleflight.Group
+	mu         sync.RWMutex
+	ttl        time.Duration
+	maxEntries int
+	items      map[string]snapshotCacheEntry
+	sf         singleflight.Group
 }
 
 type snapshotCacheLoadResult struct {
@@ -34,8 +35,9 @@ func newSnapshotCache(ttl time.Duration) *snapshotCache {
 		ttl = 30 * time.Second
 	}
 	return &snapshotCache{
-		ttl:   ttl,
-		items: make(map[string]snapshotCacheEntry),
+		ttl:        ttl,
+		maxEntries: 1024,
+		items:      make(map[string]snapshotCacheEntry),
 	}
 }
 
@@ -64,15 +66,34 @@ func (c *snapshotCache) Set(key string, payload any) snapshotCacheEntry {
 	if c == nil {
 		return snapshotCacheEntry{}
 	}
+	now := time.Now()
 	entry := snapshotCacheEntry{
 		ETag:      buildETagFromAny(payload),
 		Payload:   payload,
-		ExpiresAt: time.Now().Add(c.ttl),
+		ExpiresAt: now.Add(c.ttl),
 	}
 	if key == "" {
 		return entry
 	}
 	c.mu.Lock()
+	for itemKey, item := range c.items {
+		if !now.Before(item.ExpiresAt) {
+			delete(c.items, itemKey)
+		}
+	}
+	if c.maxEntries > 0 && len(c.items) >= c.maxEntries {
+		if _, replacing := c.items[key]; !replacing {
+			oldestKey := ""
+			var oldestExpiry time.Time
+			for itemKey, item := range c.items {
+				if oldestKey == "" || item.ExpiresAt.Before(oldestExpiry) {
+					oldestKey = itemKey
+					oldestExpiry = item.ExpiresAt
+				}
+			}
+			delete(c.items, oldestKey)
+		}
+	}
 	c.items[key] = entry
 	c.mu.Unlock()
 	return entry

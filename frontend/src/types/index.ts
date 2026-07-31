@@ -43,6 +43,7 @@ export interface FeishuNotificationStatus {
   panel_url?: string
   can_open_panel: boolean
   notification_enabled: boolean
+  preferences?: Record<'balance' | 'subscription' | 'quota' | 'security' | 'channel', boolean>
 }
 
 export interface UserNotificationSettings {
@@ -51,6 +52,7 @@ export interface UserNotificationSettings {
 
 export interface UpdateUserNotificationSettingsRequest {
   feishu_notification_enabled?: boolean
+  feishu_preferences?: Partial<Record<'balance' | 'subscription' | 'quota' | 'security' | 'channel', boolean>>
 }
 
 // ==================== User & Auth Types ====================
@@ -1227,6 +1229,13 @@ export interface WindowStats {
   cost: number // Account cost (account multiplier)
   standard_cost?: number
   user_cost?: number
+}
+
+export interface AccountPeriodStats {
+  today: WindowStats
+  last_7_days: WindowStats
+  last_30_days: WindowStats
+  last_used_at?: string | null
 }
 
 export interface UsageProgress {

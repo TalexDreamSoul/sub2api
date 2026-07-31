@@ -513,6 +513,8 @@ export interface SystemSettings {
   feishu_notify_enabled: boolean;
   feishu_notify_app_id: string;
   feishu_notify_app_secret_configured: boolean;
+  feishu_notify_verification_token_configured?: boolean;
+  feishu_notify_encrypt_key_configured?: boolean;
   feishu_notify_token_url: string;
   feishu_notify_message_url: string;
   feishu_notify_panel_url: string;
@@ -842,6 +844,8 @@ export interface UpdateSettingsRequest {
   feishu_notify_enabled?: boolean;
   feishu_notify_app_id?: string;
   feishu_notify_app_secret?: string;
+  feishu_notify_verification_token?: string;
+  feishu_notify_encrypt_key?: string;
   feishu_notify_token_url?: string;
   feishu_notify_message_url?: string;
   feishu_notify_panel_url?: string;
@@ -1006,6 +1010,77 @@ export interface UpdateSettingsRequest {
   allow_user_view_error_requests?: boolean;
 }
 
+export interface FeishuDiagnosticStep {
+  name: string;
+  status: "passed" | "warning" | "failed";
+  message: string;
+  latency_ms: number;
+}
+
+export interface FeishuOutboxStats {
+  pending: number;
+  processing: number;
+  dead: number;
+  oldest_created_at?: string;
+}
+
+export interface FeishuDiagnosticReport {
+  healthy: boolean;
+  app_id?: string;
+  steps: FeishuDiagnosticStep[];
+  outbox: FeishuOutboxStats;
+}
+
+export interface FeishuDelivery {
+  id: number;
+  user_id?: number;
+  category: string;
+  status: string;
+  attempts: number;
+  provider_message_id?: string;
+  error_code?: string;
+  created_at: string;
+  sent_at?: string;
+}
+
+export async function diagnoseFeishuNotification(userId?: number, sendTest = false): Promise<FeishuDiagnosticReport> {
+  const { data } = await apiClient.post<FeishuDiagnosticReport>(
+    "/admin/settings/feishu-notification/diagnose",
+    { user_id: userId || 0, send_test: sendTest },
+  );
+  return data;
+}
+
+export interface FeishuBoundUser {
+  id: number;
+  email: string;
+  username: string;
+}
+
+export async function listFeishuBoundUsers(search = "", limit = 30): Promise<FeishuBoundUser[]> {
+  const { data } = await apiClient.get<FeishuBoundUser[]>(
+    "/admin/settings/feishu-notification/users",
+    { params: { search: search || undefined, limit } },
+  );
+  return data;
+}
+
+export async function listFeishuDeliveries(limit = 50): Promise<FeishuDelivery[]> {
+  const { data } = await apiClient.get<FeishuDelivery[]>(
+    "/admin/settings/feishu-notification/deliveries",
+    { params: { limit } },
+  );
+  return data;
+}
+
+export async function sendFeishuAdminMessage(userId: number, content: string, idempotencyKey: string): Promise<{ queued: boolean; inserted: boolean; outbox_id: number }> {
+  const { data } = await apiClient.post(
+    "/admin/settings/feishu-notification/messages",
+    { user_id: userId, content },
+    { headers: { "Idempotency-Key": idempotencyKey } },
+  );
+  return data;
+}
 /**
  * Get all system settings
  * @returns System settings
@@ -1551,6 +1626,10 @@ export const settingsAPI = {
   testSmtpConnection,
   sendTestEmail,
   testFeishuNotification,
+  diagnoseFeishuNotification,
+  listFeishuBoundUsers,
+  listFeishuDeliveries,
+  sendFeishuAdminMessage,
   getEmailTemplates,
   getEmailTemplate,
   updateEmailTemplate,

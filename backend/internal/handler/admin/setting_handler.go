@@ -11,6 +11,7 @@ import (
 
 	"github.com/Wei-Shaw/sub2api/internal/handler/dto"
 	"github.com/Wei-Shaw/sub2api/internal/pkg/response"
+	middleware2 "github.com/Wei-Shaw/sub2api/internal/server/middleware"
 	"github.com/Wei-Shaw/sub2api/internal/service"
 
 	"github.com/gin-gonic/gin"
@@ -103,6 +104,9 @@ func (h *SettingHandler) TestFeishuNotification(c *gin.Context) {
 	}
 	if req.UserID <= 0 {
 		response.BadRequest(c, "user_id is required")
+		return
+	}
+	if !middleware2.EnforceStepUpAlways(c, h.totpService, h.userService) {
 		return
 	}
 	if err := h.feishuNotificationService.SendTest(c.Request.Context(), req.UserID); err != nil {
@@ -223,6 +227,8 @@ func (h *SettingHandler) GetSettings(c *gin.Context) {
 		FeishuNotifyTokenURL:                                   settings.FeishuNotifyTokenURL,
 		FeishuNotifyMessageURL:                                 settings.FeishuNotifyMessageURL,
 		FeishuNotifyPanelURL:                                   settings.FeishuNotifyPanelURL,
+		FeishuNotifyVerificationTokenConfigured:                settings.FeishuNotifyVerificationTokenConfigured,
+		FeishuNotifyEncryptKeyConfigured:                       settings.FeishuNotifyEncryptKeyConfigured,
 		WeChatConnectEnabled:                                   settings.WeChatConnectEnabled,
 		WeChatConnectAppID:                                     settings.WeChatConnectAppID,
 		WeChatConnectAppSecretConfigured:                       settings.WeChatConnectAppSecretConfigured,

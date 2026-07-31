@@ -84,6 +84,10 @@ type accountWindowStatsBatchReader interface {
 	GetAccountWindowStatsBatch(ctx context.Context, accountIDs []int64, startTime time.Time) (map[int64]*usagestats.AccountStats, error)
 }
 
+type accountPeriodStatsBatchReader interface {
+	GetAccountPeriodStatsBatch(ctx context.Context, accountIDs []int64, now time.Time) (map[int64]*usagestats.AccountPeriodStats, error)
+}
+
 // apiUsageCache 缓存从 Anthropic API 获取的使用率数据（utilization, resets_at）
 // 同时支持缓存错误响应（负缓存），防止 429 等错误导致的重试风暴
 type apiUsageCache struct {
@@ -1407,6 +1411,55 @@ func (s *AccountUsageService) GetTodayStatsBatch(ctx context.Context, accountIDs
 	for _, accountID := range uniqueIDs {
 		if _, ok := result[accountID]; !ok {
 			result[accountID] = &WindowStats{}
+		}
+	}
+	return result, nil
+}
+
+// GetPeriodStatsBatch returns local 1/7/30-day usage summaries for the account
+// list. It prefers the production single-scan query and keeps a compatibility
+// fallback for lightweight test repositories.
+func (s *AccountUsageService) GetPeriodStatsBatch(ctx context.Context, accountIDs []int64) (map[int64]*usagestats.AccountPeriodStats, error) {
+	uniqueIDs := make([]int64, 0, len(accountIDs))
+	seen := make(map[int64]struct{}, len(accountIDs))
+	for _, accountID := range accountIDs {
+		if accountID <= 0 {
+			continue
+		}
+		if _, exists := seen[accountID]; exists {
+			continue
+		}
+		seen[accountID] = struct{}{}
+		uniqueIDs = append(uniqueIDs, accountID)
+	}
+
+	result := make(map[int64]*usagestats.AccountPeriodStats, len(uniqueIDs))
+	if len(uniqueIDs) == 0 {
+		return result, nil
+	}
+	now := timezone.Now()
+	if batchReader, ok := s.usageLogRepo.(accountPeriodStatsBatchReader); ok {
+		return batchReader.GetAccountPeriodStatsBatch(ctx, uniqueIDs, now)
+	}
+
+	starts := []time.Time{
+		timezone.StartOfDay(now),
+		timezone.StartOfDay(now.AddDate(0, 0, -6)),
+		timezone.StartOfDay(now.AddDate(0, 0, -29)),
+	}
+	for _, accountID := range uniqueIDs {
+		periods := make([]*usagestats.AccountStats, 0, len(starts))
+		for _, start := range starts {
+			stats, err := s.usageLogRepo.GetAccountWindowStats(ctx, accountID, start)
+			if err != nil {
+				return nil, fmt.Errorf("get account period stats failed: %w", err)
+			}
+			periods = append(periods, stats)
+		}
+		result[accountID] = &usagestats.AccountPeriodStats{
+			Today:      *periods[0],
+			Last7Days:  *periods[1],
+			Last30Days: *periods[2],
 		}
 	}
 	return result, nil

@@ -1542,6 +1542,8 @@ func (s *UsageLogRepoSuite) TestGetAccountUsageStats() {
 
 	s.Require().Len(resp.History, 2, "expected 2 days of history")
 	s.Require().Equal(int64(2), resp.Summary.TotalRequests)
+	s.Require().Equal(3, resp.Summary.Days)
+	s.Require().Equal(2, resp.Summary.ActualDaysUsed)
 	s.Require().Equal(int64(450), resp.Summary.TotalTokens)
 	s.Require().Len(resp.Models, 2)
 }
@@ -1558,6 +1560,8 @@ func (s *UsageLogRepoSuite) TestGetAccountUsageStats_EmptyRange() {
 
 	s.Require().Len(resp.History, 0)
 	s.Require().Equal(int64(0), resp.Summary.TotalRequests)
+	s.Require().Equal(3, resp.Summary.Days)
+	s.Require().Zero(resp.Summary.ActualDaysUsed)
 }
 
 // --- GetUserUsageTrend ---

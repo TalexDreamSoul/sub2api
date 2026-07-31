@@ -11306,7 +11306,7 @@ async function testFeishuNotification() {
 
   testingFeishuNotification.value = true;
   try {
-    await adminAPI.settings.testFeishuNotification({ user_id: userId });
+    await settingsStepUp.run(() => adminAPI.settings.testFeishuNotification({ user_id: userId }));
     appStore.showSuccess(localText("飞书测试通知已发送。", "Feishu test notification sent."));
   } catch (error: unknown) {
     appStore.showError(

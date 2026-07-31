@@ -112,6 +112,8 @@ func provideCleanup(
 	quotaFlusher *service.UserPlatformQuotaUsageFlusher,
 	upstreamBillingProbe *service.UpstreamBillingProbeService,
 	ollamaCloudUsage *service.OllamaCloudUsageService,
+	feishuNotification *service.FeishuNotificationService,
+	accountReset *service.AccountResetService,
 	auditLog *service.AuditLogService,
 	promptAudit *securityaudit.PromptService,
 ) func() {
@@ -329,6 +331,18 @@ func provideCleanup(
 			{"UpstreamBillingProbeService", func() error {
 				if upstreamBillingProbe != nil {
 					upstreamBillingProbe.Stop()
+				}
+				return nil
+			}},
+			{"AccountResetService", func() error {
+				if accountReset != nil {
+					accountReset.Stop()
+				}
+				return nil
+			}},
+			{"FeishuNotificationService", func() error {
+				if feishuNotification != nil {
+					feishuNotification.Stop()
 				}
 				return nil
 			}},

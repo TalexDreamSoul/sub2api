@@ -12,6 +12,8 @@ import (
 // StepUpAuthMiddleware 敏感操作 step-up 2FA 门控中间件类型。
 type StepUpAuthMiddleware gin.HandlerFunc
 
+const contextKeyStepUpRequired = "step_up_required"
+
 // stepUpGrantChecker 抽象 TOTP step-up 授权检查能力（由 TotpService 实现）。
 type stepUpGrantChecker interface {
 	HasStepUpGrant(ctx context.Context, userID int64, sessionKey string) (bool, error)
@@ -71,6 +73,15 @@ func stepUpAuth(grantChecker stepUpGrantChecker, userReader stepUpUserReader, se
 	}
 }
 
+// RequireStepUpAlways marks a route as mandatory step-up while reusing the
+// configured middleware instance and its injected services.
+func RequireStepUpAlways(next StepUpAuthMiddleware) gin.HandlerFunc {
+	return func(c *gin.Context) {
+		c.Set(contextKeyStepUpRequired, true)
+		gin.HandlerFunc(next)(c)
+	}
+}
+
 // EnforceStepUp 对当前请求执行与 StepUpAuthMiddleware 相同语义的 step-up 门控，
 // 供 handler 在需要按请求内容条件触发时调用（如仅当把用户角色提升为管理员时）。
 // 校验失败时写入错误响应并中止请求，返回 false；通过返回 true。
@@ -95,9 +106,9 @@ func EnforceStepUpAlways(
 }
 
 func enforceStepUp(c *gin.Context, grantChecker stepUpGrantChecker, userReader stepUpUserReader, settings stepUpSettingReader) bool {
-	// 功能开关关闭时直接放行（含 admin API key），恢复门控引入前的行为。
-	// settings 为 nil 时保持门控（fail-closed）：正常装配不会出现 nil。
-	if settings != nil && !settings.IsStepUpEnabled(c.Request.Context()) {
+	// Mandatory routes keep the gate active even when the global opt-in switch is off.
+	required, _ := c.Get(contextKeyStepUpRequired)
+	if settings != nil && !settings.IsStepUpEnabled(c.Request.Context()) && required != true {
 		return true
 	}
 

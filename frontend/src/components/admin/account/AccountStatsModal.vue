@@ -9,22 +9,27 @@
       <!-- Account Info Header -->
       <div
         v-if="account"
-        class="flex items-center justify-between rounded-xl border border-primary-200 bg-gradient-to-r from-primary-50 to-primary-100 p-3 dark:border-primary-700/50 dark:from-primary-900/20 dark:to-primary-800/20"
+        class="flex flex-col gap-3 rounded-lg border border-primary-200 bg-gradient-to-r from-primary-50 to-primary-100 p-3 dark:border-primary-700/50 dark:from-primary-900/20 dark:to-primary-800/20 sm:flex-row sm:items-center sm:justify-between"
       >
-        <div class="flex items-center gap-3">
+        <div class="flex min-w-0 items-center gap-3">
           <div
             class="flex h-10 w-10 items-center justify-center rounded-lg bg-gradient-to-br from-primary-500 to-primary-600"
           >
             <Icon name="chartBar" size="md" class="text-white" />
           </div>
-          <div>
-            <div class="font-semibold text-gray-900 dark:text-gray-100">{{ account.name }}</div>
+          <div class="min-w-0">
+            <div class="break-words font-semibold text-gray-900 dark:text-gray-100">{{ account.name }}</div>
             <div class="text-xs text-gray-500 dark:text-gray-400">
-              {{ t('admin.accounts.last30DaysUsage') }}
+              {{ t('admin.accounts.stats.localSource') }} · {{ periodDays }} {{ t('admin.accounts.stats.days') }}
+              <span v-if="lastLoadedAt"> · {{ t('admin.accounts.stats.updatedAt', { time: lastLoadedAt }) }}</span>
             </div>
           </div>
         </div>
-        <span
+        <div class="flex w-full flex-wrap items-center gap-2 sm:w-auto sm:justify-end">
+          <div class="inline-flex rounded-md border border-gray-200 bg-white p-0.5 dark:border-dark-600 dark:bg-dark-800" role="group">
+            <button v-for="days in periodOptions" :key="days" type="button" :class="['min-w-10 rounded px-2 py-1 text-xs font-medium transition-colors', periodDays === days ? 'bg-primary-600 text-white' : 'text-gray-600 hover:bg-gray-100 dark:text-gray-300 dark:hover:bg-dark-700']" :disabled="loading" @click="changePeriod(days)">{{ days }}{{ t('admin.accounts.stats.daySuffix') }}</button>
+          </div>
+          <span
           :class="[
             'rounded-full px-2.5 py-1 text-xs font-semibold',
             account.status === 'active'
@@ -33,7 +38,8 @@
           ]"
         >
           {{ account.status }}
-        </span>
+          </span>
+        </div>
       </div>
 
       <!-- Loading State -->
@@ -494,6 +500,9 @@ const emit = defineEmits<{
 
 const loading = ref(false)
 const stats = ref<AccountUsageStatsResponse | null>(null)
+const periodOptions = [1, 7, 30, 90] as const
+const periodDays = ref<(typeof periodOptions)[number]>(30)
+const lastLoadedAt = ref('')
 
 // Dark mode detection
 const isDarkMode = computed(() => {
@@ -642,30 +651,47 @@ const lineChartOptions = computed(() => ({
   }
 }))
 
-// Load stats when modal opens
+// Load stats when the modal opens or its account changes.
+let requestSequence = 0
 watch(
-  () => props.show,
-  async (newVal) => {
-    if (newVal && props.account) {
+  () => [props.show, props.account?.id] as const,
+  async ([show, accountID], previous) => {
+    if (show && accountID) {
+      if (!previous?.[0] || previous[1] !== accountID) periodDays.value = 30
       await loadStats()
     } else {
+      requestSequence++
+      loading.value = false
       stats.value = null
     }
   }
 )
 
 const loadStats = async () => {
-  if (!props.account) return
+  const accountID = props.account?.id
+  if (!accountID) return
 
+  const sequence = ++requestSequence
+  const days = periodDays.value
   loading.value = true
   try {
-    stats.value = await adminAPI.accounts.getStats(props.account.id, 30)
+    const nextStats = await adminAPI.accounts.getStats(accountID, days)
+    if (sequence !== requestSequence || !props.show || props.account?.id !== accountID) return
+    stats.value = nextStats
+    lastLoadedAt.value = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
   } catch (error) {
+    if (sequence !== requestSequence) return
     console.error('Failed to load account stats:', error)
     stats.value = null
   } finally {
-    loading.value = false
+    if (sequence === requestSequence) loading.value = false
   }
+}
+
+const changePeriod = async (days: (typeof periodOptions)[number]) => {
+  if (periodDays.value === days || loading.value) return
+  periodDays.value = days
+  await loadStats()
 }
 
 const handleClose = () => {

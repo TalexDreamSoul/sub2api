@@ -31,6 +31,12 @@ func TestResolveAdminAccessRule(t *testing.T) {
 			permission: service.AdminPermissionDashboardRead,
 		},
 		{
+			name:       "period_stats_batch_requires_accounts_read",
+			method:     http.MethodPost,
+			path:       "/api/v1/admin/accounts/period-stats/batch",
+			permission: service.AdminPermissionAccountsRead,
+		},
+		{
 			name:       "user_update_requires_write",
 			method:     http.MethodPut,
 			path:       "/api/v1/admin/users/:id",

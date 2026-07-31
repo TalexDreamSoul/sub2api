@@ -388,6 +388,91 @@ func (r *usageLogRepository) GetAccountWindowStatsBatch(ctx context.Context, acc
 	return result, nil
 }
 
+// GetAccountPeriodStatsBatch returns local gateway-observed usage for three
+// calendar-aligned lookback windows in one scan of usage_logs.
+func (r *usageLogRepository) GetAccountPeriodStatsBatch(ctx context.Context, accountIDs []int64, now time.Time) (map[int64]*usagestats.AccountPeriodStats, error) {
+	result := make(map[int64]*usagestats.AccountPeriodStats, len(accountIDs))
+	if len(accountIDs) == 0 {
+		return result, nil
+	}
+
+	todayStart := timezone.StartOfDay(now)
+	weekStart := timezone.StartOfDay(now.AddDate(0, 0, -6))
+	monthStart := timezone.StartOfDay(now.AddDate(0, 0, -29))
+	query := `
+		WITH requested AS (
+			SELECT UNNEST($1::bigint[]) AS account_id
+		), period AS (
+			SELECT
+				account_id,
+				COUNT(*) FILTER (WHERE created_at >= $2) AS today_requests,
+				COALESCE(SUM(input_tokens + output_tokens + cache_creation_tokens + cache_read_tokens) FILTER (WHERE created_at >= $2), 0) AS today_tokens,
+				COALESCE(SUM(COALESCE(account_stats_cost, total_cost) * COALESCE(account_rate_multiplier, 1)) FILTER (WHERE created_at >= $2), 0) AS today_cost,
+				COALESCE(SUM(total_cost) FILTER (WHERE created_at >= $2), 0) AS today_standard_cost,
+				COALESCE(SUM(actual_cost) FILTER (WHERE created_at >= $2), 0) AS today_user_cost,
+				COUNT(*) FILTER (WHERE created_at >= $3) AS week_requests,
+				COALESCE(SUM(input_tokens + output_tokens + cache_creation_tokens + cache_read_tokens) FILTER (WHERE created_at >= $3), 0) AS week_tokens,
+				COALESCE(SUM(COALESCE(account_stats_cost, total_cost) * COALESCE(account_rate_multiplier, 1)) FILTER (WHERE created_at >= $3), 0) AS week_cost,
+				COALESCE(SUM(total_cost) FILTER (WHERE created_at >= $3), 0) AS week_standard_cost,
+				COALESCE(SUM(actual_cost) FILTER (WHERE created_at >= $3), 0) AS week_user_cost,
+				COUNT(*) AS month_requests,
+				COALESCE(SUM(input_tokens + output_tokens + cache_creation_tokens + cache_read_tokens), 0) AS month_tokens,
+				COALESCE(SUM(COALESCE(account_stats_cost, total_cost) * COALESCE(account_rate_multiplier, 1)), 0) AS month_cost,
+				COALESCE(SUM(total_cost), 0) AS month_standard_cost,
+				COALESCE(SUM(actual_cost), 0) AS month_user_cost
+			FROM usage_logs
+			WHERE account_id = ANY($1) AND created_at >= $4
+			GROUP BY account_id
+		)
+		SELECT
+			r.account_id,
+			COALESCE(p.today_requests,0), COALESCE(p.today_tokens,0), COALESCE(p.today_cost,0), COALESCE(p.today_standard_cost,0), COALESCE(p.today_user_cost,0),
+			COALESCE(p.week_requests,0), COALESCE(p.week_tokens,0), COALESCE(p.week_cost,0), COALESCE(p.week_standard_cost,0), COALESCE(p.week_user_cost,0),
+			COALESCE(p.month_requests,0), COALESCE(p.month_tokens,0), COALESCE(p.month_cost,0), COALESCE(p.month_standard_cost,0), COALESCE(p.month_user_cost,0),
+			last_usage.last_used_at
+		FROM requested r
+		LEFT JOIN period p ON p.account_id=r.account_id
+		LEFT JOIN LATERAL (
+			SELECT MAX(ul.created_at) AS last_used_at FROM usage_logs ul WHERE ul.account_id=r.account_id
+		) last_usage ON TRUE
+		ORDER BY r.account_id
+	`
+	rows, err := r.sql.QueryContext(ctx, query, pq.Array(accountIDs), todayStart, weekStart, monthStart)
+	if err != nil {
+		return nil, err
+	}
+	defer func() { _ = rows.Close() }()
+
+	for rows.Next() {
+		var accountID int64
+		var lastUsed sql.NullTime
+		stats := &usagestats.AccountPeriodStats{}
+		if err := rows.Scan(
+			&accountID,
+			&stats.Today.Requests, &stats.Today.Tokens, &stats.Today.Cost, &stats.Today.StandardCost, &stats.Today.UserCost,
+			&stats.Last7Days.Requests, &stats.Last7Days.Tokens, &stats.Last7Days.Cost, &stats.Last7Days.StandardCost, &stats.Last7Days.UserCost,
+			&stats.Last30Days.Requests, &stats.Last30Days.Tokens, &stats.Last30Days.Cost, &stats.Last30Days.StandardCost, &stats.Last30Days.UserCost,
+			&lastUsed,
+		); err != nil {
+			return nil, err
+		}
+		if lastUsed.Valid {
+			lastUsedAt := lastUsed.Time
+			stats.LastUsedAt = &lastUsedAt
+		}
+		result[accountID] = stats
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	for _, accountID := range accountIDs {
+		if _, ok := result[accountID]; !ok {
+			result[accountID] = &usagestats.AccountPeriodStats{}
+		}
+	}
+	return result, nil
+}
+
 // GetGeminiUsageTotalsBatch 批量聚合 Gemini 账号在窗口内的 Pro/Flash 请求与用量。
 // 模型分类规则与 service.geminiModelClassFromName 一致：model 包含 flash/lite 视为 flash，其余视为 pro。
 func (r *usageLogRepository) GetGeminiUsageTotalsBatch(ctx context.Context, accountIDs []int64, startTime, endTime time.Time) (map[int64]service.GeminiUsageTotals, error) {
@@ -963,14 +1048,17 @@ func (r *usageLogRepository) GetUpstreamEndpointStatsWithFilters(ctx context.Con
 
 // GetAccountUsageStats returns comprehensive usage statistics for an account over a time range
 func (r *usageLogRepository) GetAccountUsageStats(ctx context.Context, accountID int64, startTime, endTime time.Time) (resp *AccountUsageStatsResponse, err error) {
-	daysCount := int(endTime.Sub(startTime).Hours()/24) + 1
+	daysCount := 0
+	for day := timezone.StartOfDay(startTime); day.Before(endTime); day = day.AddDate(0, 0, 1) {
+		daysCount++
+	}
 	if daysCount <= 0 {
-		daysCount = 30
+		daysCount = 1
 	}
 
 	query := `
 		SELECT
-			TO_CHAR(created_at, 'YYYY-MM-DD') as date,
+			TO_CHAR(created_at AT TIME ZONE $4, 'YYYY-MM-DD') as date,
 			COUNT(*) as requests,
 			COALESCE(SUM(input_tokens + output_tokens + cache_creation_tokens + cache_read_tokens), 0) as tokens,
 			COALESCE(SUM(total_cost), 0) as cost,
@@ -982,7 +1070,7 @@ func (r *usageLogRepository) GetAccountUsageStats(ctx context.Context, accountID
 		ORDER BY date ASC
 	`
 
-	rows, err := r.sql.QueryContext(ctx, query, accountID, startTime, endTime)
+	rows, err := r.sql.QueryContext(ctx, query, accountID, startTime, endTime, timezone.Name())
 	if err != nil {
 		return nil, err
 	}
@@ -1042,8 +1130,9 @@ func (r *usageLogRepository) GetAccountUsageStats(ctx context.Context, accountID
 	}
 
 	actualDaysUsed := len(history)
-	if actualDaysUsed == 0 {
-		actualDaysUsed = 1
+	averageDivisor := actualDaysUsed
+	if averageDivisor == 0 {
+		averageDivisor = 1
 	}
 
 	avgQuery := "SELECT COALESCE(AVG(duration_ms), 0) as avg_duration_ms FROM usage_logs WHERE account_id = $1 AND created_at >= $2 AND created_at < $3"
@@ -1060,10 +1149,10 @@ func (r *usageLogRepository) GetAccountUsageStats(ctx context.Context, accountID
 		TotalStandardCost: totalStandardCost,
 		TotalRequests:     totalRequests,
 		TotalTokens:       totalTokens,
-		AvgDailyCost:      totalAccountCost / float64(actualDaysUsed),
-		AvgDailyUserCost:  totalUserCost / float64(actualDaysUsed),
-		AvgDailyRequests:  float64(totalRequests) / float64(actualDaysUsed),
-		AvgDailyTokens:    float64(totalTokens) / float64(actualDaysUsed),
+		AvgDailyCost:      totalAccountCost / float64(averageDivisor),
+		AvgDailyUserCost:  totalUserCost / float64(averageDivisor),
+		AvgDailyRequests:  float64(totalRequests) / float64(averageDivisor),
+		AvgDailyTokens:    float64(totalTokens) / float64(averageDivisor),
 		AvgDurationMs:     avgDuration,
 	}
 

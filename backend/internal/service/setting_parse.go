@@ -114,6 +114,8 @@ func (s *SettingService) InitializeDefaultSettings(ctx context.Context) error {
 		SettingKeyFeishuNotifyTokenURL:                      defaultFeishuNotifyTokenURL,
 		SettingKeyFeishuNotifyMessageURL:                    defaultFeishuNotifyMessageURL,
 		SettingKeyFeishuNotifyPanelURL:                      defaultFeishuPanelPath,
+		SettingKeyFeishuNotifyVerificationToken:             "",
+		SettingKeyFeishuNotifyEncryptKey:                    "",
 		SettingKeyOIDCConnectEnabled:                        "false",
 		SettingKeyOIDCConnectProviderName:                   "OIDC",
 		SettingKeyOIDCConnectClientID:                       "",
@@ -643,6 +645,10 @@ func (s *SettingService) parseSettings(settings map[string]string) *SystemSettin
 	result.FeishuNotifyTokenURL = firstNonEmpty(settings[SettingKeyFeishuNotifyTokenURL], defaultFeishuNotifyTokenURL)
 	result.FeishuNotifyMessageURL = firstNonEmpty(settings[SettingKeyFeishuNotifyMessageURL], defaultFeishuNotifyMessageURL)
 	result.FeishuNotifyPanelURL = firstNonEmpty(settings[SettingKeyFeishuNotifyPanelURL], defaultFeishuPanelPath)
+	result.FeishuNotifyVerificationToken = strings.TrimSpace(settings[SettingKeyFeishuNotifyVerificationToken])
+	result.FeishuNotifyVerificationTokenConfigured = result.FeishuNotifyVerificationToken != ""
+	result.FeishuNotifyEncryptKey = strings.TrimSpace(settings[SettingKeyFeishuNotifyEncryptKey])
+	result.FeishuNotifyEncryptKeyConfigured = result.FeishuNotifyEncryptKey != ""
 
 	// Generic OIDC 设置：
 	// - 兼容 config.yaml/env

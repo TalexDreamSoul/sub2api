@@ -140,6 +140,24 @@ func TestEnforceStepUpDisabledSkipsAllChecks(t *testing.T) {
 	})
 }
 
+func TestRequireStepUpAlwaysIgnoresDisabledGlobalSwitch(t *testing.T) {
+	disabled := stubStepUpSettingReader{enabled: false}
+	gin.SetMode(gin.TestMode)
+	router := gin.New()
+	router.POST("/sensitive", RequireStepUpAlways(StepUpAuthMiddleware(stepUpAuth(
+		stubStepUpGrantChecker{granted: false},
+		stubStepUpUserReader{user: &service.User{ID: 1, TotpEnabled: true}},
+		disabled,
+	))), func(c *gin.Context) { c.Status(http.StatusNoContent) })
+
+	req := httptest.NewRequest(http.MethodPost, "/sensitive", nil)
+	rec := httptest.NewRecorder()
+	router.ServeHTTP(rec, req)
+
+	require.Equal(t, http.StatusUnauthorized, rec.Code)
+	require.Contains(t, rec.Body.String(), "UNAUTHORIZED")
+}
+
 // settings 为 nil 时保持门控（fail-closed），避免装配缺陷静默关闭安全控制。
 func TestEnforceStepUpNilSettingsFailsClosed(t *testing.T) {
 	c, rec := newStepUpTestContext(t)

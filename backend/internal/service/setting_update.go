@@ -183,6 +183,8 @@ func (s *SettingService) buildSystemSettingsUpdates(ctx context.Context, setting
 	settings.FeishuNotifyTokenURL = firstNonEmpty(settings.FeishuNotifyTokenURL, defaultFeishuNotifyTokenURL)
 	settings.FeishuNotifyMessageURL = firstNonEmpty(settings.FeishuNotifyMessageURL, defaultFeishuNotifyMessageURL)
 	settings.FeishuNotifyPanelURL = firstNonEmpty(settings.FeishuNotifyPanelURL, defaultFeishuPanelPath)
+	settings.FeishuNotifyVerificationToken = strings.TrimSpace(settings.FeishuNotifyVerificationToken)
+	settings.FeishuNotifyEncryptKey = strings.TrimSpace(settings.FeishuNotifyEncryptKey)
 
 	updates := make(map[string]string)
 
@@ -288,6 +290,12 @@ func (s *SettingService) buildSystemSettingsUpdates(ctx context.Context, setting
 	updates[SettingKeyFeishuNotifyPanelURL] = settings.FeishuNotifyPanelURL
 	if settings.FeishuNotifyAppSecret != "" {
 		updates[SettingKeyFeishuNotifyAppSecret] = settings.FeishuNotifyAppSecret
+	}
+	if settings.FeishuNotifyVerificationToken != "" {
+		updates[SettingKeyFeishuNotifyVerificationToken] = settings.FeishuNotifyVerificationToken
+	}
+	if settings.FeishuNotifyEncryptKey != "" {
+		updates[SettingKeyFeishuNotifyEncryptKey] = settings.FeishuNotifyEncryptKey
 	}
 
 	// Generic OIDC OAuth 登录

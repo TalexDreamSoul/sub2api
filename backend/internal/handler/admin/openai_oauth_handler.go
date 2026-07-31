@@ -1,6 +1,7 @@
 package admin
 
 import (
+	"context"
 	"strconv"
 	"strings"
 	"time"
@@ -8,6 +9,7 @@ import (
 	"github.com/Wei-Shaw/sub2api/internal/handler/dto"
 	"github.com/Wei-Shaw/sub2api/internal/pkg/openai"
 	"github.com/Wei-Shaw/sub2api/internal/pkg/response"
+	middleware2 "github.com/Wei-Shaw/sub2api/internal/server/middleware"
 	"github.com/Wei-Shaw/sub2api/internal/service"
 
 	"github.com/gin-gonic/gin"
@@ -15,9 +17,16 @@ import (
 
 // OpenAIOAuthHandler handles OpenAI OAuth-related operations
 type OpenAIOAuthHandler struct {
-	openaiOAuthService *service.OpenAIOAuthService
-	adminService       service.AdminService
-	quotaService       *service.OpenAIQuotaService
+	openaiOAuthService  *service.OpenAIOAuthService
+	adminService        service.AdminService
+	quotaService        *service.OpenAIQuotaService
+	accountResetService *service.AccountResetService
+}
+
+func ProvideOpenAIOAuthHandler(openaiOAuthService *service.OpenAIOAuthService, adminService service.AdminService, quotaService *service.OpenAIQuotaService, resetService *service.AccountResetService) *OpenAIOAuthHandler {
+	h := NewOpenAIOAuthHandler(openaiOAuthService, adminService, quotaService)
+	h.accountResetService = resetService
+	return h
 }
 
 func oauthPlatformFromPath(c *gin.Context) string {
@@ -475,6 +484,10 @@ func (h *OpenAIOAuthHandler) CreateShadow(c *gin.Context) {
 	response.Success(c, dto.AccountFromServiceShallow(shadow))
 }
 
+type openAIResetQuotaRequest struct {
+	RestoreSubscriptionUsage bool `json:"restore_subscription_usage"`
+}
+
 // ResetQuota consumes one rate-limit reset credit for an OpenAI account.
 // POST /api/v1/admin/openai/accounts/:id/reset-quota
 func (h *OpenAIOAuthHandler) ResetQuota(c *gin.Context) {
@@ -487,10 +500,41 @@ func (h *OpenAIOAuthHandler) ResetQuota(c *gin.Context) {
 		response.BadRequest(c, "openai quota service is not enabled")
 		return
 	}
-	result, err := h.quotaService.ResetCredit(c.Request.Context(), accountID)
+	if h.accountResetService == nil {
+		result, err := h.quotaService.ResetCredit(c.Request.Context(), accountID)
+		if err != nil {
+			response.ErrorFrom(c, err)
+			return
+		}
+		response.Success(c, result)
+		return
+	}
+	var req openAIResetQuotaRequest
+	if c.Request.ContentLength != 0 {
+		if err := c.ShouldBindJSON(&req); err != nil {
+			response.BadRequest(c, "Invalid request: "+err.Error())
+			return
+		}
+	}
+	subject, ok := middleware2.GetAuthSubjectFromContext(c)
+	if !ok || subject.UserID <= 0 {
+		response.Unauthorized(c, "Administrator session is required")
+		return
+	}
+	upstream, operation, err := h.accountResetService.ExecuteOpenAICreditReset(c.Request.Context(), service.AccountResetRequest{
+		AccountID: accountID, ActorID: subject.UserID, IdempotencyKey: c.GetHeader("Idempotency-Key"),
+		RestoreSubscriptionUsage: req.RestoreSubscriptionUsage,
+	}, func(ctx context.Context, redeemID string) (*service.OpenAIQuotaResetResult, error) {
+		return h.quotaService.ResetCreditWithRedeemRequestID(ctx, accountID, redeemID)
+	})
 	if err != nil {
 		response.ErrorFrom(c, err)
 		return
 	}
-	response.Success(c, result)
+	if upstream == nil {
+		response.InternalError(c, "account reset result is unavailable")
+		return
+	}
+	upstream.ResetOperation = operation
+	response.Success(c, upstream)
 }

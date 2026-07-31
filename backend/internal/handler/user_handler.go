@@ -247,7 +247,8 @@ type userNotificationSettingsResponse struct {
 }
 
 type updateUserNotificationSettingsRequest struct {
-	FeishuNotificationEnabled *bool `json:"feishu_notification_enabled"`
+	FeishuNotificationEnabled *bool           `json:"feishu_notification_enabled"`
+	FeishuPreferences         map[string]bool `json:"feishu_preferences"`
 }
 
 // GetProfile handles getting user profile
@@ -378,6 +379,9 @@ func (h *UserHandler) UpdateNotificationSettings(c *gin.Context) {
 			status, err = h.feishuNotificationService.SetEnabled(c.Request.Context(), subject.UserID, *req.FeishuNotificationEnabled)
 		} else {
 			status, err = h.feishuNotificationService.GetStatus(c.Request.Context(), subject.UserID)
+		}
+		if err == nil && req.FeishuPreferences != nil {
+			status.Preferences, err = h.feishuNotificationService.SetPreferences(c.Request.Context(), subject.UserID, req.FeishuPreferences)
 		}
 		if err != nil {
 			response.ErrorFrom(c, err)

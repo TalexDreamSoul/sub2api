@@ -2,17 +2,20 @@ package service
 
 import (
 	"context"
+	"crypto/sha256"
 	"encoding/json"
 	"fmt"
 	"log/slog"
 	"net/url"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	infraerrors "github.com/Wei-Shaw/sub2api/internal/pkg/errors"
 	"github.com/imroc/req/v3"
 	"github.com/tidwall/gjson"
+	"golang.org/x/sync/singleflight"
 )
 
 const (
@@ -31,12 +34,14 @@ var (
 )
 
 type FeishuNotificationConfig struct {
-	Enabled    bool
-	AppID      string
-	AppSecret  string
-	TokenURL   string
-	MessageURL string
-	PanelURL   string
+	Enabled           bool
+	AppID             string
+	AppSecret         string
+	TokenURL          string
+	MessageURL        string
+	PanelURL          string
+	VerificationToken string
+	EncryptKey        string
 }
 
 type FeishuUserIdentityBinding struct {
@@ -72,17 +77,22 @@ type FeishuUserIdentityRepository interface {
 	DeleteFeishuNotificationBinding(ctx context.Context, userID int64, appID string) error
 }
 
+type feishuBindingByOpenIDRepository interface {
+	GetFeishuBindingByOpenID(ctx context.Context, appID, tenantKey, openID, purpose string) (*FeishuUserIdentityBinding, error)
+}
+
 type FeishuNotificationStatus struct {
-	Bound               bool   `json:"bound"`
-	Enabled             bool   `json:"enabled"`
-	AppID               string `json:"app_id,omitempty"`
-	TenantKey           string `json:"tenant_key,omitempty"`
-	UnionIDHint         string `json:"union_id_hint,omitempty"`
-	OpenIDHint          string `json:"open_id_hint,omitempty"`
-	BindStartPath       string `json:"bind_start_path,omitempty"`
-	PanelURL            string `json:"panel_url,omitempty"`
-	CanOpenPanel        bool   `json:"can_open_panel"`
-	NotificationEnabled bool   `json:"notification_enabled"`
+	Bound               bool            `json:"bound"`
+	Enabled             bool            `json:"enabled"`
+	AppID               string          `json:"app_id,omitempty"`
+	TenantKey           string          `json:"tenant_key,omitempty"`
+	UnionIDHint         string          `json:"union_id_hint,omitempty"`
+	OpenIDHint          string          `json:"open_id_hint,omitempty"`
+	BindStartPath       string          `json:"bind_start_path,omitempty"`
+	PanelURL            string          `json:"panel_url,omitempty"`
+	CanOpenPanel        bool            `json:"can_open_panel"`
+	NotificationEnabled bool            `json:"notification_enabled"`
+	Preferences         map[string]bool `json:"preferences"`
 }
 
 type FeishuBalanceLowNotification struct {
@@ -106,6 +116,7 @@ type FeishuSubscriptionExpiryNotification struct {
 }
 
 type FeishuContentModerationBanNotification struct {
+	SourceEventID  int64
 	UserID         int64
 	UserName       string
 	UserEmail      string
@@ -118,6 +129,7 @@ type FeishuContentModerationBanNotification struct {
 }
 
 type FeishuContentModerationViolationNotification struct {
+	SourceEventID  int64
 	UserID         int64
 	UserName       string
 	UserEmail      string
@@ -129,12 +141,35 @@ type FeishuContentModerationViolationNotification struct {
 }
 
 type FeishuNotificationService struct {
-	settingRepo SettingRepository
-	bindingRepo FeishuUserIdentityRepository
+	settingRepo        SettingRepository
+	bindingRepo        FeishuUserIdentityRepository
+	outboxRepo         FeishuNotificationOutboxRepository
+	eventRepo          FeishuEventReceiptRepository
+	userRepo           UserRepository
+	userSubRepo        UserSubscriptionRepository
+	apiKeyRepo         APIKeyRepository
+	preferenceRepo     NotificationPreferenceRepository
+	channelMonitorRepo ChannelMonitorRepository
+
+	tokenMu            sync.RWMutex
+	tokenCacheKey      string
+	tokenValue         string
+	tokenExpiresAt     time.Time
+	tokenFlight        singleflight.Group
+	tokenFetchObserver func()
+
+	workerMu     sync.Mutex
+	workerCancel context.CancelFunc
+	workerWG     sync.WaitGroup
+	workerID     string
 }
 
-func NewFeishuNotificationService(settingRepo SettingRepository, bindingRepo FeishuUserIdentityRepository) *FeishuNotificationService {
-	return &FeishuNotificationService{settingRepo: settingRepo, bindingRepo: bindingRepo}
+func NewFeishuNotificationService(settingRepo SettingRepository, bindingRepo FeishuUserIdentityRepository, outboxRepos ...FeishuNotificationOutboxRepository) *FeishuNotificationService {
+	svc := &FeishuNotificationService{settingRepo: settingRepo, bindingRepo: bindingRepo}
+	if len(outboxRepos) > 0 {
+		svc.outboxRepo = outboxRepos[0]
+	}
+	return svc
 }
 
 func (s *FeishuNotificationService) GetConfig(ctx context.Context) (FeishuNotificationConfig, error) {
@@ -153,6 +188,8 @@ func (s *FeishuNotificationService) GetConfig(ctx context.Context) (FeishuNotifi
 		SettingKeyFeishuNotifyTokenURL,
 		SettingKeyFeishuNotifyMessageURL,
 		SettingKeyFeishuNotifyPanelURL,
+		SettingKeyFeishuNotifyVerificationToken,
+		SettingKeyFeishuNotifyEncryptKey,
 	})
 	if err != nil {
 		return cfg, err
@@ -163,6 +200,8 @@ func (s *FeishuNotificationService) GetConfig(ctx context.Context) (FeishuNotifi
 	cfg.TokenURL = firstNonEmpty(settings[SettingKeyFeishuNotifyTokenURL], defaultFeishuNotifyTokenURL)
 	cfg.MessageURL = firstNonEmpty(settings[SettingKeyFeishuNotifyMessageURL], defaultFeishuNotifyMessageURL)
 	cfg.PanelURL = firstNonEmpty(settings[SettingKeyFeishuNotifyPanelURL], defaultFeishuPanelPath)
+	cfg.VerificationToken = strings.TrimSpace(settings[SettingKeyFeishuNotifyVerificationToken])
+	cfg.EncryptKey = strings.TrimSpace(settings[SettingKeyFeishuNotifyEncryptKey])
 	return cfg, nil
 }
 
@@ -193,6 +232,9 @@ func (s *FeishuNotificationService) GetStatus(ctx context.Context, userID int64)
 	status.TenantKey = binding.TenantKey
 	status.UnionIDHint = maskOpaqueIdentity(binding.UnionID)
 	status.OpenIDHint = maskOpaqueIdentity(binding.OpenID)
+	if preferences, prefErr := s.GetPreferences(ctx, userID); prefErr == nil {
+		status.Preferences = preferences
+	}
 	return status, nil
 }
 
@@ -208,6 +250,36 @@ func (s *FeishuNotificationService) SetEnabled(ctx context.Context, userID int64
 		return FeishuNotificationStatus{}, err
 	}
 	return s.GetStatus(ctx, userID)
+}
+
+func (s *FeishuNotificationService) GetPreferences(ctx context.Context, userID int64) (map[string]bool, error) {
+	defaults := make(map[string]bool, len(FeishuNotificationCategories))
+	for _, category := range FeishuNotificationCategories {
+		defaults[category] = true
+	}
+	if s == nil || s.preferenceRepo == nil {
+		return defaults, nil
+	}
+	return s.preferenceRepo.Get(ctx, userID, "feishu", FeishuNotificationCategories)
+}
+
+func (s *FeishuNotificationService) SetPreferences(ctx context.Context, userID int64, preferences map[string]bool) (map[string]bool, error) {
+	if s == nil || s.preferenceRepo == nil {
+		return nil, fmt.Errorf("notification preference repository is unavailable")
+	}
+	allowed := make(map[string]struct{}, len(FeishuNotificationCategories))
+	for _, category := range FeishuNotificationCategories {
+		allowed[category] = struct{}{}
+	}
+	for category := range preferences {
+		if _, ok := allowed[category]; !ok {
+			return nil, infraerrors.BadRequest("INVALID_NOTIFICATION_CATEGORY", "invalid notification category")
+		}
+	}
+	if err := s.preferenceRepo.Set(ctx, userID, "feishu", preferences); err != nil {
+		return nil, err
+	}
+	return s.GetPreferences(ctx, userID)
 }
 
 func (s *FeishuNotificationService) UpsertNotifyBinding(ctx context.Context, input UpsertFeishuUserIdentityBindingInput) (*FeishuUserIdentityBinding, error) {
@@ -236,7 +308,7 @@ func (s *FeishuNotificationService) SendBalanceLow(ctx context.Context, input Fe
 			s.feishuPanelActionElement(ctx, "打开面板", input.RechargeURL),
 		},
 	}
-	return s.sendInteractiveCard(ctx, input.UserID, card)
+	return s.queueNotificationCard(ctx, input.UserID, "balance", fmt.Sprintf("balance:%d:%s:%.4f", input.UserID, time.Now().UTC().Format("2006010215"), input.Threshold), card)
 }
 
 func (s *FeishuNotificationService) SendSubscriptionExpiryReminder(ctx context.Context, input FeishuSubscriptionExpiryNotification) error {
@@ -255,7 +327,7 @@ func (s *FeishuNotificationService) SendSubscriptionExpiryReminder(ctx context.C
 			s.feishuPanelActionElement(ctx, "查看面板", ""),
 		},
 	}
-	return s.sendInteractiveCard(ctx, input.UserID, card)
+	return s.queueNotificationCard(ctx, input.UserID, "subscription", fmt.Sprintf("subscription-expiry:%d:%d:%s:%d:%s", input.UserID, input.SubscriptionID, input.SourceReminderKey, input.DaysRemaining, input.ExpiresAt.UTC().Format(time.RFC3339)), card)
 }
 
 func (s *FeishuNotificationService) SendContentModerationViolation(ctx context.Context, input FeishuContentModerationViolationNotification) error {
@@ -279,7 +351,11 @@ func (s *FeishuNotificationService) SendContentModerationViolation(ctx context.C
 			s.feishuPanelActionElement(ctx, "查看账户", ""),
 		},
 	}
-	return s.sendInteractiveCard(ctx, input.UserID, card)
+	businessKey := fmt.Sprintf("moderation-violation:%d:%s:%d", input.UserID, input.Category, input.ViolationCount)
+	if input.SourceEventID > 0 {
+		businessKey = fmt.Sprintf("moderation-violation:event:%d", input.SourceEventID)
+	}
+	return s.queueNotificationCard(ctx, input.UserID, "security", businessKey, card)
 }
 
 func (s *FeishuNotificationService) SendContentModerationBan(ctx context.Context, input FeishuContentModerationBanNotification) error {
@@ -308,7 +384,11 @@ func (s *FeishuNotificationService) SendContentModerationBan(ctx context.Context
 			s.feishuPanelActionElement(ctx, "查看账户", ""),
 		},
 	}
-	return s.sendInteractiveCard(ctx, input.UserID, card)
+	businessKey := fmt.Sprintf("moderation-ban:%d:%s:%d", input.UserID, input.Category, input.ViolationCount)
+	if input.SourceEventID > 0 {
+		businessKey = fmt.Sprintf("moderation-ban:event:%d", input.SourceEventID)
+	}
+	return s.queueNotificationCard(ctx, input.UserID, "security", businessKey, card)
 }
 
 func (s *FeishuNotificationService) SendTest(ctx context.Context, userID int64) error {
@@ -330,7 +410,10 @@ func (s *FeishuNotificationService) SendTest(ctx context.Context, userID int64) 
 	return s.sendInteractiveCard(ctx, userID, card)
 }
 
-func (s *FeishuNotificationService) sendInteractiveCard(ctx context.Context, userID int64, card map[string]any) error {
+func (s *FeishuNotificationService) queueNotificationCard(ctx context.Context, userID int64, category, businessKey string, card map[string]any) error {
+	if s == nil || s.outboxRepo == nil {
+		return s.sendInteractiveCard(ctx, userID, card)
+	}
 	cfg, err := s.GetConfig(ctx)
 	if err != nil {
 		return err
@@ -338,7 +421,7 @@ func (s *FeishuNotificationService) sendInteractiveCard(ctx context.Context, use
 	if !cfg.Enabled || cfg.AppID == "" || cfg.AppSecret == "" {
 		return ErrFeishuNotificationDisabled
 	}
-	if s == nil || s.bindingRepo == nil {
+	if s.bindingRepo == nil {
 		return ErrFeishuNotificationNotBound
 	}
 	binding, err := s.bindingRepo.GetFeishuNotificationBinding(ctx, userID, cfg.AppID)
@@ -348,22 +431,95 @@ func (s *FeishuNotificationService) sendInteractiveCard(ctx context.Context, use
 	if !binding.NotificationEnabled {
 		return ErrFeishuNotificationDisabled
 	}
-	token, err := s.fetchTenantAccessToken(ctx, cfg)
+	preferences, err := s.GetPreferences(ctx, userID)
 	if err != nil {
 		return err
+	}
+	if enabled, exists := preferences[category]; exists && !enabled {
+		return ErrFeishuNotificationDisabled
+	}
+	payload, err := json.Marshal(card)
+	if err != nil {
+		return err
+	}
+	businessKey = strings.TrimSpace(businessKey)
+	if businessKey == "" {
+		return fmt.Errorf("feishu notification business key is required")
+	}
+	orderingKey := ""
+	if category == "channel" {
+		orderingKey = fmt.Sprintf("feishu:channel:user:%d", userID)
+	}
+	_, _, err = s.outboxRepo.Enqueue(ctx, FeishuNotificationOutboxInput{
+		DedupeKey:   fmt.Sprintf("feishu:%s:user:%d:%s", cfg.AppID, userID, businessKey),
+		OrderingKey: orderingKey,
+		UserID:      userID, AppID: cfg.AppID, Category: category, Payload: payload,
+	})
+	return err
+}
+
+func (s *FeishuNotificationService) sendInteractiveCard(ctx context.Context, userID int64, card map[string]any) error {
+	_, err := s.sendInteractiveCardWithID(ctx, userID, card)
+	return err
+}
+
+func (s *FeishuNotificationService) sendInteractiveCardWithID(ctx context.Context, userID int64, card map[string]any) (string, error) {
+	return s.sendInteractiveCardWithPreference(ctx, userID, card, true)
+}
+
+func (s *FeishuNotificationService) sendInteractiveCardWithPreference(ctx context.Context, userID int64, card map[string]any, respectPreference bool) (string, error) {
+	return s.sendInteractiveCardWithPreferenceAndUUID(ctx, userID, card, respectPreference, "")
+}
+
+func (s *FeishuNotificationService) sendInteractiveCardWithPreferenceAndUUID(ctx context.Context, userID int64, card map[string]any, respectPreference bool, messageUUID string) (string, error) {
+	cfg, err := s.GetConfig(ctx)
+	if err != nil {
+		return "", err
+	}
+	if !cfg.Enabled || cfg.AppID == "" || cfg.AppSecret == "" {
+		return "", ErrFeishuNotificationDisabled
+	}
+	if s == nil || s.bindingRepo == nil {
+		return "", ErrFeishuNotificationNotBound
+	}
+	binding, err := s.bindingRepo.GetFeishuNotificationBinding(ctx, userID, cfg.AppID)
+	if err != nil {
+		return "", err
+	}
+	if respectPreference && !binding.NotificationEnabled {
+		return "", ErrFeishuNotificationDisabled
+	}
+	return s.sendInteractiveCardToOpenIDWithUUID(ctx, cfg, userID, binding.OpenID, card, messageUUID)
+}
+
+func (s *FeishuNotificationService) sendInteractiveCardToOpenID(ctx context.Context, cfg FeishuNotificationConfig, userID int64, openID string, card map[string]any) (string, error) {
+	return s.sendInteractiveCardToOpenIDWithUUID(ctx, cfg, userID, openID, card, "")
+}
+
+func (s *FeishuNotificationService) sendInteractiveCardToOpenIDWithUUID(ctx context.Context, cfg FeishuNotificationConfig, userID int64, openID string, card map[string]any, messageUUID string) (string, error) {
+	openID = strings.TrimSpace(openID)
+	if openID == "" {
+		return "", ErrFeishuNotificationNotBound
+	}
+	token, err := s.fetchTenantAccessToken(ctx, cfg)
+	if err != nil {
+		return "", err
 	}
 	cardJSON, err := json.Marshal(card)
 	if err != nil {
-		return err
+		return "", err
 	}
 	messageURL, err := buildFeishuMessageURL(cfg.MessageURL)
 	if err != nil {
-		return err
+		return "", err
 	}
 	body := map[string]any{
-		"receive_id": binding.OpenID,
+		"receive_id": openID,
 		"msg_type":   "interactive",
 		"content":    string(cardJSON),
+	}
+	if messageUUID = strings.TrimSpace(messageUUID); messageUUID != "" {
+		body["uuid"] = messageUUID
 	}
 	resp, err := req.C().SetTimeout(30*time.Second).R().
 		SetContext(ctx).
@@ -373,13 +529,14 @@ func (s *FeishuNotificationService) sendInteractiveCard(ctx context.Context, use
 		SetBody(body).
 		Post(messageURL)
 	if err != nil {
-		return fmt.Errorf("send feishu message: %w", err)
+		return "", fmt.Errorf("send feishu message: %w", err)
 	}
 	if err := validateFeishuNotifyAPIResponse("send feishu message", resp); err != nil {
-		return err
+		return "", err
 	}
-	slog.Info("feishu notification sent", "user_id", userID, "app_id", cfg.AppID)
-	return nil
+	messageID := firstNonEmpty(getFeishuNotifyJSON(resp.String(), "data.message_id"), getFeishuNotifyJSON(resp.String(), "message_id"))
+	slog.Info("feishu notification sent", "user_id", userID, "app_id", cfg.AppID, "message_id", messageID)
+	return messageID, nil
 }
 
 func (s *FeishuNotificationService) feishuPanelActionElement(ctx context.Context, label string, fallbackURL string) map[string]any {
@@ -404,27 +561,81 @@ func (s *FeishuNotificationService) feishuPanelActionElement(ctx context.Context
 }
 
 func (s *FeishuNotificationService) fetchTenantAccessToken(ctx context.Context, cfg FeishuNotificationConfig) (string, error) {
-	resp, err := req.C().SetTimeout(30*time.Second).R().
-		SetContext(ctx).
-		SetHeader("Accept", "application/json").
-		SetHeader("Content-Type", "application/json").
-		SetBody(map[string]string{
-			"app_id":     strings.TrimSpace(cfg.AppID),
-			"app_secret": strings.TrimSpace(cfg.AppSecret),
-		}).
-		Post(strings.TrimSpace(cfg.TokenURL))
-	if err != nil {
-		return "", fmt.Errorf("request feishu tenant token: %w", err)
+	cacheKey := fmt.Sprintf("%x", sha256.Sum256([]byte(strings.Join([]string{
+		strings.TrimSpace(cfg.AppID),
+		strings.TrimSpace(cfg.AppSecret),
+		strings.TrimSpace(cfg.TokenURL),
+	}, "\x00"))))
+	now := time.Now()
+	if token := s.cachedTenantToken(cacheKey, now); token != "" {
+		return token, nil
 	}
-	body := resp.String()
-	if err := validateFeishuNotifyAPIResponse("feishu tenant token", resp); err != nil {
+
+	value, err, _ := s.tokenFlight.Do(cacheKey, func() (any, error) {
+		if token := s.cachedTenantToken(cacheKey, time.Now()); token != "" {
+			return token, nil
+		}
+		if s.tokenFetchObserver != nil {
+			s.tokenFetchObserver()
+		}
+		resp, err := req.C().SetTimeout(30*time.Second).R().
+			SetContext(ctx).
+			SetHeader("Accept", "application/json").
+			SetHeader("Content-Type", "application/json").
+			SetBody(map[string]string{
+				"app_id":     strings.TrimSpace(cfg.AppID),
+				"app_secret": strings.TrimSpace(cfg.AppSecret),
+			}).
+			Post(strings.TrimSpace(cfg.TokenURL))
+		if err != nil {
+			return "", fmt.Errorf("request feishu tenant token: %w", err)
+		}
+		body := resp.String()
+		if err := validateFeishuNotifyAPIResponse("feishu tenant token", resp); err != nil {
+			return "", err
+		}
+		token := firstNonEmpty(getFeishuNotifyJSON(body, "tenant_access_token"), getFeishuNotifyJSON(body, "data.tenant_access_token"))
+		if token == "" {
+			return "", fmt.Errorf("feishu tenant token response missing tenant_access_token")
+		}
+		expiresIn := gjson.Get(body, "expire").Int()
+		if expiresIn <= 0 {
+			expiresIn = gjson.Get(body, "data.expire").Int()
+		}
+		if expiresIn <= 0 {
+			expiresIn = 7200
+		}
+		cacheSeconds := expiresIn - 300
+		if cacheSeconds < 60 {
+			cacheSeconds = 60
+		}
+		s.tokenMu.Lock()
+		s.tokenCacheKey = cacheKey
+		s.tokenValue = token
+		s.tokenExpiresAt = time.Now().Add(time.Duration(cacheSeconds) * time.Second)
+		s.tokenMu.Unlock()
+		return token, nil
+	})
+	if err != nil {
 		return "", err
 	}
-	token := firstNonEmpty(getFeishuNotifyJSON(body, "tenant_access_token"), getFeishuNotifyJSON(body, "data.tenant_access_token"))
-	if token == "" {
-		return "", fmt.Errorf("feishu tenant token response missing tenant_access_token")
+	token, _ := value.(string)
+	if strings.TrimSpace(token) == "" {
+		return "", fmt.Errorf("feishu tenant token is empty")
 	}
 	return token, nil
+}
+
+func (s *FeishuNotificationService) cachedTenantToken(cacheKey string, now time.Time) string {
+	if s == nil {
+		return ""
+	}
+	s.tokenMu.RLock()
+	defer s.tokenMu.RUnlock()
+	if s.tokenCacheKey != cacheKey || s.tokenValue == "" || !now.Before(s.tokenExpiresAt) {
+		return ""
+	}
+	return s.tokenValue
 }
 
 func buildFeishuMessageURL(raw string) (string, error) {

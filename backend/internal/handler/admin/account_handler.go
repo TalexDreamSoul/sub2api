@@ -27,6 +27,7 @@ import (
 	"github.com/Wei-Shaw/sub2api/internal/pkg/response"
 	"github.com/Wei-Shaw/sub2api/internal/pkg/timezone"
 	"github.com/Wei-Shaw/sub2api/internal/pkg/xai"
+	middleware2 "github.com/Wei-Shaw/sub2api/internal/server/middleware"
 	"github.com/Wei-Shaw/sub2api/internal/service"
 
 	"github.com/gin-gonic/gin"
@@ -64,6 +65,7 @@ type AccountHandler struct {
 	grokImportProber        grokImportProber
 	upstreamBillingProbe    *service.UpstreamBillingProbeService
 	ollamaCloudUsage        *service.OllamaCloudUsageService
+	accountResetService     *service.AccountResetService
 }
 
 // SetUpstreamBillingProbeService attaches the optional remote billing probe service.
@@ -73,6 +75,10 @@ func (h *AccountHandler) SetUpstreamBillingProbeService(probe *service.UpstreamB
 
 func (h *AccountHandler) SetOllamaCloudUsageService(usage *service.OllamaCloudUsageService) {
 	h.ollamaCloudUsage = usage
+}
+
+func (h *AccountHandler) SetAccountResetService(reset *service.AccountResetService) {
+	h.accountResetService = reset
 }
 
 // NewAccountHandler creates a new admin account handler
@@ -2194,6 +2200,10 @@ func (h *AccountHandler) ClearRateLimit(c *gin.Context) {
 	response.Success(c, h.buildAccountResponseWithRuntime(c.Request.Context(), account))
 }
 
+type resetAccountQuotaRequest struct {
+	RestoreSubscriptionUsage bool `json:"restore_subscription_usage"`
+}
+
 // ResetQuota handles resetting account quota usage
 // POST /api/v1/admin/accounts/:id/reset-quota
 func (h *AccountHandler) ResetQuota(c *gin.Context) {
@@ -2202,19 +2212,51 @@ func (h *AccountHandler) ResetQuota(c *gin.Context) {
 		response.BadRequest(c, "Invalid account ID")
 		return
 	}
-
-	if err := h.adminService.ResetAccountQuota(c.Request.Context(), accountID); err != nil {
+	if h.accountResetService == nil {
+		if err := h.adminService.ResetAccountQuota(c.Request.Context(), accountID); err != nil {
+			response.ErrorFrom(c, err)
+			return
+		}
+		account, err := h.adminService.GetAccount(c.Request.Context(), accountID)
+		if err != nil {
+			response.ErrorFrom(c, err)
+			return
+		}
+		response.Success(c, h.buildAccountResponseWithRuntime(c.Request.Context(), account))
+		return
+	}
+	var req resetAccountQuotaRequest
+	if c.Request.ContentLength != 0 {
+		if err := c.ShouldBindJSON(&req); err != nil {
+			response.BadRequest(c, "Invalid request: "+err.Error())
+			return
+		}
+	}
+	subject, ok := middleware2.GetAuthSubjectFromContext(c)
+	if !ok || subject.UserID <= 0 {
+		response.Unauthorized(c, "Administrator session is required")
+		return
+	}
+	result, err := h.accountResetService.ExecuteLocalQuotaReset(c.Request.Context(), service.AccountResetRequest{
+		AccountID: accountID, ActorID: subject.UserID, IdempotencyKey: c.GetHeader("Idempotency-Key"),
+		RestoreSubscriptionUsage: req.RestoreSubscriptionUsage,
+	})
+	if err != nil {
 		response.ErrorFrom(c, err)
 		return
 	}
-
 	account, err := h.adminService.GetAccount(c.Request.Context(), accountID)
 	if err != nil {
 		response.ErrorFrom(c, err)
 		return
 	}
-
-	response.Success(c, h.buildAccountResponseWithRuntime(c.Request.Context(), account))
+	response.Success(c, struct {
+		AccountWithConcurrency
+		*service.AccountResetResult
+	}{
+		AccountWithConcurrency: h.buildAccountResponseWithRuntime(c.Request.Context(), account),
+		AccountResetResult:     result,
+	})
 }
 
 // GetTempUnschedulable handles getting temporary unschedulable status
@@ -2276,6 +2318,57 @@ func (h *AccountHandler) GetTodayStats(c *gin.Context) {
 	}
 
 	response.Success(c, stats)
+}
+
+// BatchPeriodStatsRequest requests local usage summaries for account rows.
+type BatchPeriodStatsRequest struct {
+	AccountIDs []int64 `json:"account_ids" binding:"required"`
+}
+
+// GetBatchPeriodStats returns local today/7-day/30-day statistics in one DB scan.
+// POST /api/v1/admin/accounts/period-stats/batch
+func (h *AccountHandler) GetBatchPeriodStats(c *gin.Context) {
+	var req BatchPeriodStatsRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		response.BadRequest(c, "Invalid request: "+err.Error())
+		return
+	}
+	accountIDs := normalizeInt64IDList(req.AccountIDs)
+	if len(accountIDs) == 0 {
+		response.Success(c, gin.H{"stats": map[string]any{}})
+		return
+	}
+	if len(accountIDs) > 200 {
+		response.BadRequest(c, "At most 200 account IDs are allowed")
+		return
+	}
+
+	cacheKey := buildAccountPeriodStatsBatchCacheKey(accountIDs)
+	cached, hit, err := accountPeriodStatsBatchCache.GetOrLoad(cacheKey, func() (any, error) {
+		stats, loadErr := h.accountUsageService.GetPeriodStatsBatch(c.Request.Context(), accountIDs)
+		if loadErr != nil {
+			return nil, loadErr
+		}
+		return gin.H{"stats": stats}, nil
+	})
+	if err != nil {
+		response.ErrorFrom(c, err)
+		return
+	}
+	if cached.ETag != "" {
+		c.Header("ETag", cached.ETag)
+		c.Header("Vary", "If-None-Match")
+		if ifNoneMatchMatched(c.GetHeader("If-None-Match"), cached.ETag) {
+			c.Status(http.StatusNotModified)
+			return
+		}
+	}
+	if hit {
+		c.Header("X-Snapshot-Cache", "hit")
+	} else {
+		c.Header("X-Snapshot-Cache", "miss")
+	}
+	response.Success(c, cached.Payload)
 }
 
 // BatchTodayStatsRequest 批量今日统计请求体。

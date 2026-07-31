@@ -3377,7 +3377,7 @@ func (s *ContentModerationService) persistContentModerationLog(ctx context.Conte
 	autoBanJustApplied := false
 	if applySideEffects {
 		autoBanJustApplied = s.applyFlaggedAccountSideEffects(ctx, cfg, log)
-		s.sendFlaggedNotificationSideEffects(ctx, cfg, log, autoBanJustApplied)
+		s.sendFlaggedEmailSideEffects(ctx, cfg, log, autoBanJustApplied)
 	}
 	s.decorateCyberuseAuditMetadata(cfg, log, hashText)
 	if s.repo != nil {
@@ -3385,6 +3385,9 @@ func (s *ContentModerationService) persistContentModerationLog(ctx context.Conte
 			slog.Warn("content_moderation.create_log_failed", "user_id", contentModerationEmailUserID(log), "endpoint", log.Endpoint, "action", log.Action, "error", err)
 			return
 		}
+	}
+	if applySideEffects {
+		s.sendFlaggedFeishuSideEffects(ctx, cfg, log, autoBanJustApplied)
 	}
 	if applySideEffects && cfg != nil && log.Flagged && log.UserID != nil && *log.UserID > 0 {
 		logID := log.ID
@@ -3440,20 +3443,25 @@ func (s *ContentModerationService) applyFlaggedAccountSideEffects(ctx context.Co
 	return true
 }
 
-func (s *ContentModerationService) sendFlaggedNotificationSideEffects(ctx context.Context, cfg *ContentModerationConfig, log *ContentModerationLog, autoBanJustApplied bool) {
+func (s *ContentModerationService) sendFlaggedEmailSideEffects(ctx context.Context, cfg *ContentModerationConfig, log *ContentModerationLog, autoBanJustApplied bool) {
 	if s == nil || cfg == nil || log == nil || !log.Flagged {
 		return
 	}
 	userID := contentModerationEmailUserID(log)
 	emailSent := false
-	if s.emailService != nil && strings.TrimSpace(log.UserEmail) != "" {
-		if autoBanJustApplied {
-			if err := s.sendAccountDisabledEmail(ctx, cfg, log); err != nil {
-				slog.Warn("content_moderation.ban_email_failed", "user_id", userID, "email", log.UserEmail, "error", err)
-			} else {
-				emailSent = true
-			}
+	if s.emailService != nil && strings.TrimSpace(log.UserEmail) != "" && autoBanJustApplied {
+		if err := s.sendAccountDisabledEmail(ctx, cfg, log); err != nil {
+			slog.Warn("content_moderation.ban_email_failed", "user_id", userID, "email", log.UserEmail, "error", err)
+		} else {
+			emailSent = true
 		}
+	}
+	log.EmailSent = emailSent
+}
+
+func (s *ContentModerationService) sendFlaggedFeishuSideEffects(ctx context.Context, cfg *ContentModerationConfig, log *ContentModerationLog, autoBanJustApplied bool) {
+	if s == nil || cfg == nil || log == nil || !log.Flagged || log.ID <= 0 {
+		return
 	}
 	if cfg.EmailOnHit {
 		s.sendContentModerationViolationFeishu(ctx, cfg, log)
@@ -3461,7 +3469,6 @@ func (s *ContentModerationService) sendFlaggedNotificationSideEffects(ctx contex
 	if autoBanJustApplied {
 		s.sendContentModerationBanFeishu(ctx, cfg, log)
 	}
-	log.EmailSent = emailSent
 }
 
 func (s *ContentModerationService) sendContentModerationViolationFeishu(ctx context.Context, cfg *ContentModerationConfig, log *ContentModerationLog) {
@@ -3488,6 +3495,7 @@ func (s *ContentModerationService) sendContentModerationBanFeishu(ctx context.Co
 	}
 	input := s.contentModerationFeishuInput(cfg, log)
 	if err := s.feishuNotificationService.SendContentModerationBan(ctx, FeishuContentModerationBanNotification{
+		SourceEventID:  input.SourceEventID,
 		UserID:         input.UserID,
 		UserName:       input.UserName,
 		UserEmail:      input.UserEmail,
@@ -3508,6 +3516,7 @@ func (s *ContentModerationService) contentModerationFeishuInput(cfg *ContentMode
 		banThreshold = log.EffectiveBanThreshold
 	}
 	return FeishuContentModerationViolationNotification{
+		SourceEventID:  log.ID,
 		UserID:         contentModerationEmailUserID(log),
 		UserEmail:      log.UserEmail,
 		GroupName:      log.GroupName,

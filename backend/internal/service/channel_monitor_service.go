@@ -30,6 +30,11 @@ type ChannelMonitorRepository interface {
 	ListEnabled(ctx context.Context) ([]*ChannelMonitor, error)
 	MarkChecked(ctx context.Context, id int64, checkedAt time.Time) error
 	InsertHistoryBatch(ctx context.Context, rows []*ChannelMonitorHistoryRow) error
+	RecordIncidentObservation(ctx context.Context, observation ChannelMonitorIncidentObservation) error
+	ClaimNotificationEvents(ctx context.Context, workerID string, limit int, lease time.Duration) ([]ChannelMonitorNotificationEvent, error)
+	MarkNotificationEventSent(ctx context.Context, id int64, workerID string) error
+	RetryNotificationEvent(ctx context.Context, id int64, workerID string, availableAt time.Time, errorCode string, dead bool) error
+	CleanupNotificationEvents(ctx context.Context, before time.Time) (int64, error)
 	DeleteHistoryBefore(ctx context.Context, before time.Time) (int64, error)
 
 	// 历史记录
@@ -437,6 +442,7 @@ func (s *ChannelMonitorService) RunCheck(ctx context.Context, id int64) ([]*Chec
 	}
 	results := s.runChecksConcurrent(ctx, m)
 	s.persistCheckResults(ctx, m, results)
+	s.recordPrimaryIncidentObservation(ctx, m, results)
 	return results, nil
 }
 
@@ -462,6 +468,30 @@ func (s *ChannelMonitorService) persistCheckResults(ctx context.Context, m *Chan
 	if err := s.repo.MarkChecked(ctx, m.ID, time.Now()); err != nil {
 		slog.Error("channel_monitor: mark checked failed",
 			"monitor_id", m.ID, "error", err)
+	}
+}
+
+func (s *ChannelMonitorService) recordPrimaryIncidentObservation(ctx context.Context, monitor *ChannelMonitor, results []*CheckResult) {
+	if s == nil || s.repo == nil || monitor == nil {
+		return
+	}
+	var primary *CheckResult
+	for _, result := range results {
+		if result != nil && result.Model == monitor.PrimaryModel {
+			primary = result
+			break
+		}
+	}
+	if primary == nil {
+		return
+	}
+	failed := primary.Status == MonitorStatusFailed || primary.Status == MonitorStatusError
+	if err := s.repo.RecordIncidentObservation(ctx, ChannelMonitorIncidentObservation{
+		MonitorID: monitor.ID, MonitorName: monitor.Name, Provider: monitor.Provider,
+		Model: primary.Model, Status: primary.Status, LatencyMs: primary.LatencyMs,
+		CheckedAt: primary.CheckedAt, Failed: failed, FailureTarget: monitorIncidentFailureTarget,
+	}); err != nil {
+		slog.Error("channel_monitor: record incident observation failed", "monitor_id", monitor.ID, "error", err)
 	}
 }
 

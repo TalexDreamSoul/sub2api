@@ -48,18 +48,32 @@ func (r *settingHandlerFeishuBindingRepo) DeleteFeishuNotificationBinding(ctx co
 	return nil
 }
 
+func TestFeishuNotificationSettingSecurityHelpers(t *testing.T) {
+	require.True(t, hasFeishuNotificationSettingFields(map[string]json.RawMessage{"feishu_notify_app_secret": nil}))
+	require.False(t, hasFeishuNotificationSettingFields(map[string]json.RawMessage{"site_name": nil}))
+	require.NoError(t, validateFeishuOfficialAPIURL("https://open.feishu.cn/open-apis/im/v1/messages"))
+	require.NoError(t, validateFeishuOfficialAPIURL("https://open.larksuite.com/open-apis/im/v1/messages"))
+	require.Error(t, validateFeishuOfficialAPIURL("http://open.feishu.cn/open-apis/im/v1/messages"))
+	require.Error(t, validateFeishuOfficialAPIURL("https://example.com/token"))
+	require.NoError(t, validateFeishuPanelURL("/feishu/panel"))
+	require.NoError(t, validateFeishuPanelURL("https://app.example.com/feishu/panel"))
+	require.Error(t, validateFeishuPanelURL("http://app.example.com/feishu/panel"))
+}
+
 func TestSettingHandler_UpdateSettings_PreservesFeishuNotifySecretWhenOmitted(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	repo := &settingHandlerRepoStub{values: map[string]string{
-		service.SettingKeyFeishuNotifyEnabled:   "true",
-		service.SettingKeyFeishuNotifyAppID:     "cli-old",
-		service.SettingKeyFeishuNotifyAppSecret: "old-secret",
+		service.SettingKeyFeishuNotifyEnabled:           "true",
+		service.SettingKeyFeishuNotifyAppID:             "cli-old",
+		service.SettingKeyFeishuNotifyAppSecret:         "old-secret",
+		service.SettingKeyFeishuNotifyVerificationToken: "old-token",
+		service.SettingKeyFeishuNotifyEncryptKey:        "old-encrypt-key",
 	}}
 	svc := service.NewSettingService(repo, &config.Config{Default: config.DefaultConfig{UserConcurrency: 5}})
 	handler := NewSettingHandler(svc, nil, nil, nil, nil, nil, nil)
 
 	rawBody, err := json.Marshal(map[string]any{
-		"feishu_notify_enabled": false,
+		"site_name": "Updated Site",
 	})
 	require.NoError(t, err)
 
@@ -72,15 +86,19 @@ func TestSettingHandler_UpdateSettings_PreservesFeishuNotifySecretWhenOmitted(t 
 
 	require.Equal(t, http.StatusOK, rec.Code)
 	require.Equal(t, "old-secret", repo.values[service.SettingKeyFeishuNotifyAppSecret])
+	require.Equal(t, "old-token", repo.values[service.SettingKeyFeishuNotifyVerificationToken])
+	require.Equal(t, "old-encrypt-key", repo.values[service.SettingKeyFeishuNotifyEncryptKey])
 
 	var resp response.Response
 	require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &resp))
 	data, ok := resp.Data.(map[string]any)
 	require.True(t, ok)
 	require.Equal(t, true, data["feishu_notify_app_secret_configured"])
+	require.Equal(t, true, data["feishu_notify_verification_token_configured"])
+	require.Equal(t, true, data["feishu_notify_encrypt_key_configured"])
 }
 
-func TestSettingHandler_TestFeishuNotification_SendsBoundUserCard(t *testing.T) {
+func TestSettingHandler_TestFeishuNotificationRequiresStepUp(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 
 	var messageCalled atomic.Bool
@@ -134,12 +152,6 @@ func TestSettingHandler_TestFeishuNotification_SendsBoundUserCard(t *testing.T) 
 
 	handler.TestFeishuNotification(c)
 
-	require.Equal(t, http.StatusOK, rec.Code)
-	require.True(t, messageCalled.Load())
-
-	var resp response.Response
-	require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &resp))
-	data, ok := resp.Data.(map[string]any)
-	require.True(t, ok)
-	require.Equal(t, true, data["sent"])
+	require.Equal(t, http.StatusUnauthorized, rec.Code)
+	require.False(t, messageCalled.Load())
 }

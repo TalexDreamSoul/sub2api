@@ -120,6 +120,16 @@ const routes: RouteRecordRaw[] = [
     }
   },
   {
+    path: '/auth/feishu/callback',
+    name: 'FeishuOAuthCallback',
+    component: () => import('@/views/auth/LinuxDoCallbackView.vue'),
+    meta: {
+      requiresAuth: false,
+      title: 'Feishu OAuth Callback',
+      pendingOAuthProvider: 'feishu'
+    }
+  },
+  {
     path: '/auth/dingtalk/email-completion',
     name: 'dingtalk-email-completion',
     component: () => import('@/views/auth/DingTalkEmailCompletionView.vue'),
@@ -296,6 +306,16 @@ const routes: RouteRecordRaw[] = [
       title: 'Profile',
       titleKey: 'profile.title',
       descriptionKey: 'profile.description'
+    }
+  },
+  {
+    path: '/feishu/panel',
+    name: 'FeishuPanel',
+    component: () => import('@/views/user/FeishuPanelView.vue'),
+    meta: {
+      requiresAuth: true,
+      requiresAdmin: false,
+      title: 'Feishu Panel'
     }
   },
   {
@@ -595,6 +615,16 @@ const routes: RouteRecordRaw[] = [
     }
   },
   {
+    path: '/admin/integrations/feishu',
+    name: 'AdminFeishuIntegration',
+    component: () => import('@/views/admin/FeishuIntegrationView.vue'),
+    meta: {
+      requiresAuth: true,
+      requiresAdmin: true,
+      title: 'Feishu Integration'
+    }
+  },
+  {
     path: '/admin/settings',
     name: 'AdminSettings',
     component: () => import('@/views/admin/SettingsView.vue'),
@@ -765,6 +795,7 @@ const BACKEND_MODE_CALLBACK_PATHS = [
   '/auth/callback',
   '/auth/linuxdo/callback',
   '/auth/dingtalk/callback',
+  '/auth/feishu/callback',
   '/auth/dingtalk/email-completion',
   '/auth/oidc/callback',
   '/auth/wechat/callback',

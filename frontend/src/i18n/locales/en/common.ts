@@ -173,6 +173,7 @@ export default {
     redeemCodes: 'Redeem Codes',
     ops: 'Ops',
     promoCodes: 'Promo Codes',
+    feishuIntegration: 'Feishu Integration',
     settings: 'Settings',
     myAccount: 'My Account',
     lightMode: 'Light Mode',

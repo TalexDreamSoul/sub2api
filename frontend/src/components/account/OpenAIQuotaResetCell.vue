@@ -128,11 +128,12 @@
       @confirm="confirmReset"
       @cancel="showResetConfirm = false"
     />
+    <TotpStepUpDialog v-if="showStepUpDialog" :controller="resetStepUp" />
   </div>
 </template>
 
 <script setup lang="ts">
-import { ref, computed, watch } from 'vue'
+import { ref, computed, watch, defineAsyncComponent } from 'vue'
 import { useI18n } from 'vue-i18n'
 import type { Account } from '@/types'
 import {
@@ -142,6 +143,9 @@ import {
   type OpenAIQuotaResetResult
 } from '@/api/admin/accounts'
 import ConfirmDialog from '@/components/common/ConfirmDialog.vue'
+import { useStepUp, isStepUpCancelled, isStepUpBlocked } from '@/composables/useStepUp'
+
+const TotpStepUpDialog = defineAsyncComponent(() => import('@/components/auth/TotpStepUpDialog.vue'))
 
 const props = defineProps<{
   account: Account
@@ -159,6 +163,32 @@ const data = ref<OpenAIQuotaUsage | null>(null)
 const resetMessage = ref<string | null>(null)
 const showResetConfirm = ref(false)
 const showResetCreditDetails = ref(false)
+const resetStorageKey = (accountID: number) => `sub2api:openai-quota-reset:${accountID}`
+const readStoredResetKey = (accountID: number): string => {
+  try {
+    return sessionStorage.getItem(resetStorageKey(accountID)) || ''
+  } catch {
+    return ''
+  }
+}
+const storeResetKey = (accountID: number, key: string) => {
+  try {
+    sessionStorage.setItem(resetStorageKey(accountID), key)
+  } catch {
+    // The in-memory key still protects retries in restricted storage contexts.
+  }
+}
+const clearStoredResetKey = (accountID: number) => {
+  try {
+    sessionStorage.removeItem(resetStorageKey(accountID))
+  } catch {
+    // No-op when session storage is unavailable.
+  }
+}
+
+const resetStepUp = useStepUp()
+const resetIdempotencyKey = ref(readStoredResetKey(props.account.id))
+const showStepUpDialog = computed(() => resetStepUp.visible.value)
 
 // 影子账号的额度查询会 resolve 到母账号,但影子本身不支持重置(后端返回 409);
 // 重置必须在母账号上进行。前端据此禁用影子的重置入口(外审 F6)。
@@ -295,15 +325,44 @@ const confirmReset = async () => {
   error.value = null
   resetMessage.value = null
   try {
-    const result: OpenAIQuotaResetResult = await resetOpenAIQuota(props.account.id)
-    // Refresh the reset-credit count so the badge reflects the consumed credit.
-    // handleQuery clears resetMessage on entry, so the success toast is set
-    // AFTER it resolves.
-    await handleQuery()
-    resetMessage.value = t('admin.accounts.openaiQuotaReset.resetSuccess', {
-      windows: result.windows_reset
-    })
+    if (!resetIdempotencyKey.value) {
+      resetIdempotencyKey.value = globalThis.crypto?.randomUUID?.() ?? `${Date.now()}-${Math.random().toString(36).slice(2)}`
+      storeResetKey(props.account.id, resetIdempotencyKey.value)
+    }
+    const result: OpenAIQuotaResetResult = await resetStepUp.run(() =>
+      resetOpenAIQuota(props.account.id, false, resetIdempotencyKey.value)
+    )
+    clearStoredResetKey(props.account.id)
+    resetIdempotencyKey.value = ''
+    resetMessage.value = result.reset_operation?.status === 'local_pending'
+      ? t('admin.accounts.openaiQuotaReset.refundPending')
+      : result.code === 'already_completed'
+        ? t('admin.accounts.openaiQuotaReset.resetReplay')
+        : t('admin.accounts.openaiQuotaReset.resetSuccess', { windows: result.windows_reset })
+
+    // The reset is already committed at this point. Refreshing the remaining
+    // credit count is best-effort and must not turn a successful reset into a
+    // retry with a fresh idempotency key.
+    if (data.value?.rate_limit_reset_credits) {
+      data.value = {
+        ...data.value,
+        rate_limit_reset_credits: {
+          ...data.value.rate_limit_reset_credits,
+          available_count: Math.max(0, data.value.rate_limit_reset_credits.available_count - 1)
+        }
+      }
+    }
+    try {
+      data.value = await queryOpenAIQuota(props.account.id)
+    } catch {
+      // Keep the confirmed success state and conservative local count.
+    }
   } catch (e) {
+    if (isStepUpCancelled(e)) return
+    if (isStepUpBlocked(e)) {
+      error.value = t('stepUp.notEnabled')
+      return
+    }
     error.value = extractErrorMessage(e)
   } finally {
     resetting.value = false
@@ -321,6 +380,7 @@ watch(
     resetting.value = false
     showResetConfirm.value = false
     showResetCreditDetails.value = false
+    resetIdempotencyKey.value = readStoredResetKey(props.account.id)
   }
 )
 

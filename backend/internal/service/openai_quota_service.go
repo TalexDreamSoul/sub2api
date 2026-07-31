@@ -104,9 +104,10 @@ type OpenAIQuotaResetCredit struct {
 // The inner Credit also carries `redeemed_at` (RFC3339 string); we deliberately do
 // NOT add a top-level redeemed_at to avoid ambiguity with the nested field.
 type OpenAIQuotaResetResult struct {
-	Code         string                  `json:"code"`
-	Credit       *OpenAIQuotaResetCredit `json:"credit,omitempty"`
-	WindowsReset int                     `json:"windows_reset"`
+	Code           string                  `json:"code"`
+	Credit         *OpenAIQuotaResetCredit `json:"credit,omitempty"`
+	WindowsReset   int                     `json:"windows_reset"`
+	ResetOperation *AccountResetResult     `json:"reset_operation,omitempty"`
 }
 
 // OpenAIQuotaService queries and consumes ChatGPT/Codex rate-limit reset credits
@@ -238,10 +239,21 @@ func (s *OpenAIQuotaService) queryResetCreditDetails(ctx context.Context, client
 	return &details
 }
 
-// ResetCredit consumes one rate_limit_reset_credit for the given OpenAI account.
-// The redeem_request_id is auto-generated (uuid-like) — upstream uses it for
-// idempotency. Returns the consumed credit metadata so the UI can refresh.
+// ResetCredit consumes one reset credit using a newly generated idempotency ID.
 func (s *OpenAIQuotaService) ResetCredit(ctx context.Context, accountID int64) (*OpenAIQuotaResetResult, error) {
+	redeemRequestID, err := generateRedeemRequestID()
+	if err != nil {
+		return nil, infraerrors.Newf(http.StatusInternalServerError, "OPENAI_QUOTA_REDEEM_ID_FAILED", "failed to generate redeem id: %v", err)
+	}
+	return s.ResetCreditWithRedeemRequestID(ctx, accountID, redeemRequestID)
+}
+
+// ResetCreditWithRedeemRequestID lets the durable reset workflow reuse the same
+// upstream idempotency ID after ambiguous network or local failures.
+func (s *OpenAIQuotaService) ResetCreditWithRedeemRequestID(ctx context.Context, accountID int64, redeemRequestID string) (*OpenAIQuotaResetResult, error) {
+	if strings.TrimSpace(redeemRequestID) == "" {
+		return nil, infraerrors.BadRequest("OPENAI_QUOTA_REDEEM_ID_REQUIRED", "redeem request id is required")
+	}
 	// Shadow guard: resetting credits via a shadow account would silently
 	// operate on the parent's quota; that is surprising and unwanted. Callers
 	// must reset the parent account directly.
@@ -263,11 +275,6 @@ func (s *OpenAIQuotaService) ResetCredit(ctx context.Context, accountID int64) (
 	accessToken, chatGPTAccountID, proxyURL, fedRAMP, err := s.prepareUpstreamCall(ctx, accountID)
 	if err != nil {
 		return nil, err
-	}
-
-	redeemRequestID, err := generateRedeemRequestID()
-	if err != nil {
-		return nil, infraerrors.Newf(http.StatusInternalServerError, "OPENAI_QUOTA_REDEEM_ID_FAILED", "failed to generate redeem id: %v", err)
 	}
 
 	client, err := s.privacyClientFactory(proxyURL)
@@ -311,12 +318,30 @@ func (s *OpenAIQuotaService) ResetCredit(ctx context.Context, accountID int64) (
 		break
 	}
 
+	if err := validateOpenAIQuotaResetResult(&payload); err != nil {
+		slog.Warn("openai_quota_reset_invalid_success", "account_id", accountID, "code", payload.Code, "windows_reset", payload.WindowsReset)
+		return nil, infraerrors.New(http.StatusBadGateway, "OPENAI_QUOTA_RESET_INVALID_RESPONSE", "upstream did not confirm a successful quota reset").WithCause(err)
+	}
+
 	slog.Info("openai_quota_reset_success",
 		"account_id", accountID,
 		"code", payload.Code,
 		"windows_reset", payload.WindowsReset,
 	)
 	return &payload, nil
+}
+
+func validateOpenAIQuotaResetResult(payload *OpenAIQuotaResetResult) error {
+	if payload == nil {
+		return fmt.Errorf("reset response is empty")
+	}
+	if !strings.EqualFold(strings.TrimSpace(payload.Code), "ok") {
+		return fmt.Errorf("unexpected reset response code")
+	}
+	if payload.WindowsReset <= 0 {
+		return fmt.Errorf("reset response contains no reset windows")
+	}
+	return nil
 }
 
 // prepareUpstreamCall loads the account, validates it, obtains a fresh access

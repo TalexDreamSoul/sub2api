@@ -84,13 +84,17 @@ type SystemSettings struct {
 	FeishuConnectFrontendRedirectURL string
 
 	// Feishu Notification App 设置
-	FeishuNotifyEnabled             bool
-	FeishuNotifyAppID               string
-	FeishuNotifyAppSecret           string
-	FeishuNotifyAppSecretConfigured bool
-	FeishuNotifyTokenURL            string
-	FeishuNotifyMessageURL          string
-	FeishuNotifyPanelURL            string
+	FeishuNotifyEnabled                     bool
+	FeishuNotifyAppID                       string
+	FeishuNotifyAppSecret                   string
+	FeishuNotifyAppSecretConfigured         bool
+	FeishuNotifyTokenURL                    string
+	FeishuNotifyMessageURL                  string
+	FeishuNotifyPanelURL                    string
+	FeishuNotifyVerificationToken           string
+	FeishuNotifyVerificationTokenConfigured bool
+	FeishuNotifyEncryptKey                  string
+	FeishuNotifyEncryptKeyConfigured        bool
 
 	// WeChat Connect OAuth 登录
 	WeChatConnectEnabled                   bool

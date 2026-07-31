@@ -329,6 +329,9 @@ func applyUsageBilling(ctx context.Context, requestID string, usageLog *UsageLog
 		if invalidator, ok := p.APIKeyService.(apiKeyAuthCacheInvalidator); ok && p.APIKey != nil && p.APIKey.Key != "" {
 			invalidator.InvalidateAuthCacheByKey(billingCtx, p.APIKey.Key)
 		}
+		if deps.balanceNotifyService != nil {
+			deps.balanceNotifyService.NotifyAPIKeyQuotaExhausted(billingCtx, p.User, p.APIKey, requestID)
+		}
 	}
 
 	finalizePostUsageBilling(billingCtx, p, deps, result)

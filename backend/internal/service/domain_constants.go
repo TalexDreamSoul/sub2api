@@ -251,12 +251,14 @@ const (
 	SettingKeyFeishuConnectFrontendRedirectURL = "feishu_connect_frontend_redirect_url"
 
 	// Feishu Notification App 设置
-	SettingKeyFeishuNotifyEnabled    = "feishu_notify_enabled"
-	SettingKeyFeishuNotifyAppID      = "feishu_notify_app_id"
-	SettingKeyFeishuNotifyAppSecret  = "feishu_notify_app_secret"
-	SettingKeyFeishuNotifyTokenURL   = "feishu_notify_token_url"
-	SettingKeyFeishuNotifyMessageURL = "feishu_notify_message_url"
-	SettingKeyFeishuNotifyPanelURL   = "feishu_notify_panel_url"
+	SettingKeyFeishuNotifyEnabled           = "feishu_notify_enabled"
+	SettingKeyFeishuNotifyAppID             = "feishu_notify_app_id"
+	SettingKeyFeishuNotifyAppSecret         = "feishu_notify_app_secret"
+	SettingKeyFeishuNotifyTokenURL          = "feishu_notify_token_url"
+	SettingKeyFeishuNotifyMessageURL        = "feishu_notify_message_url"
+	SettingKeyFeishuNotifyPanelURL          = "feishu_notify_panel_url"
+	SettingKeyFeishuNotifyVerificationToken = "feishu_notify_verification_token"
+	SettingKeyFeishuNotifyEncryptKey        = "feishu_notify_encrypt_key"
 
 	// WeChat Connect OAuth 登录设置
 	SettingKeyWeChatConnectEnabled             = "wechat_connect_enabled"

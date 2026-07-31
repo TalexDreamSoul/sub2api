@@ -554,9 +554,38 @@
         v-if="account.ollama_cloud_usage?.eligible"
         :account="account"
       />
-      <!-- Today stats row (requests, tokens, cost, user_cost) -->
+      <!-- Gateway-observed usage. API key providers usually do not expose a
+           global usage API, so these rows deliberately describe only traffic
+           routed through this deployment. -->
       <div
-        v-if="todayStats"
+        v-if="periodStats"
+        data-testid="local-period-stats"
+        class="space-y-0.5 rounded border border-gray-200 px-1.5 py-1 dark:border-dark-700"
+      >
+        <div class="flex items-center justify-between gap-2 text-[9px]">
+          <span class="font-medium text-gray-600 dark:text-gray-300">
+            {{ t('admin.accounts.usageWindow.localObserved') }}
+          </span>
+          <span v-if="periodStats.last_used_at" class="text-gray-400" :title="periodStats.last_used_at">
+            {{ formatRelativeTime(periodStats.last_used_at) }}
+          </span>
+        </div>
+        <div
+          v-for="row in localPeriodRows"
+          :key="row.label"
+          class="grid grid-cols-[24px_1fr_auto] items-center gap-1 text-[9px] text-gray-500 dark:text-gray-400"
+        >
+          <span class="font-medium tabular-nums">{{ row.label }}</span>
+          <span class="truncate tabular-nums">{{ formatLocalRequests(row.stats) }} · {{ formatLocalTokens(row.stats) }}</span>
+          <span class="text-right leading-tight tabular-nums" :title="`${t('usage.accountBilled')} / ${t('usage.userBilled')}`">
+            <span class="block">A ${{ formatLocalCost(row.stats) }}</span>
+            <span class="block">U ${{ formatLocalUserCost(row.stats) }}</span>
+          </span>
+        </div>
+      </div>
+      <!-- Backward-compatible today-only fallback while older servers roll out. -->
+      <div
+        v-else-if="todayStats"
         class="mb-0.5 flex items-center"
       >
         <div class="flex items-center gap-1.5 text-[9px] text-gray-500 dark:text-gray-400">
@@ -610,11 +639,19 @@
         color="purple"
       />
 
+      <p
+        v-if="periodStats"
+        class="text-[9px] text-gray-400 dark:text-gray-500"
+      >
+        <template v-if="!hasApiKeyQuota">{{ t('admin.accounts.usageWindow.limitNotConfigured') }} ·</template>
+        {{ t('admin.accounts.usageWindow.upstreamUsageUnavailable') }}
+      </p>
+
       <!-- No data at all -->
       <div
-        v-if="!todayStats && !todayStatsLoading && !hasApiKeyQuota && !account.ollama_cloud_usage?.eligible"
+        v-if="!periodStats && !todayStats && !todayStatsLoading && !hasApiKeyQuota && !account.ollama_cloud_usage?.eligible"
         class="text-xs text-gray-400"
-      >-</div>
+      >{{ t('admin.accounts.usageWindow.limitNotConfigured') }} · {{ t('admin.accounts.usageWindow.upstreamUsageUnavailable') }}</div>
     </div>
   </div>
 </template>
@@ -624,7 +661,7 @@ import { ref, computed, onMounted, onBeforeUnmount, onUnmounted, watch } from 'v
 import { useI18n } from 'vue-i18n'
 import { adminAPI } from '@/api/admin'
 import type { GrokQuotaProbeResult } from '@/api/admin/grok'
-import type { Account, AccountUsageInfo, GeminiCredentials, WindowStats } from '@/types'
+import type { Account, AccountPeriodStats, AccountUsageInfo, GeminiCredentials, WindowStats } from '@/types'
 import { buildOpenAIUsageRefreshKey } from '@/utils/accountUsageRefresh'
 import { enqueueUsageRequest } from '@/utils/usageLoadQueue'
 import { formatCompactNumber, formatRelativeTime } from '@/utils/format'
@@ -642,11 +679,13 @@ const props = withDefaults(
   defineProps<{
     account: Account
     todayStats?: WindowStats | null
+    periodStats?: AccountPeriodStats | null
     todayStatsLoading?: boolean
     manualRefreshToken?: number
   }>(),
   {
     todayStats: null,
+    periodStats: null,
     todayStatsLoading: false,
     manualRefreshToken: 0
   }
@@ -1475,6 +1514,20 @@ const quotaTotalBar = computed((): QuotaBarInfo | null => {
 })
 
 // ===== Key account today stats formatters =====
+
+const localPeriodRows = computed(() => {
+  if (!props.periodStats) return []
+  return [
+    { label: '1d', stats: props.periodStats.today },
+    { label: '7d', stats: props.periodStats.last_7_days },
+    { label: '30d', stats: props.periodStats.last_30_days }
+  ]
+})
+
+const formatLocalRequests = (stats: WindowStats): string => `${formatCompactNumber(stats.requests, { allowBillions: false })} req`
+const formatLocalTokens = (stats: WindowStats): string => formatCompactNumber(stats.tokens)
+const formatLocalCost = (stats: WindowStats): string => Number(stats.cost || 0).toFixed(2)
+const formatLocalUserCost = (stats: WindowStats): string => Number(stats.user_cost || 0).toFixed(2)
 
 const formatKeyRequests = computed(() => {
   if (!props.todayStats) return ''

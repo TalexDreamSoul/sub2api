@@ -134,6 +134,7 @@ func isReadOnlyAdminPost(path string) bool {
 		"/accounts/check-mixed-channel",
 		"/accounts/sync/crs/preview",
 		"/accounts/today-stats/batch",
+		"/accounts/period-stats/batch",
 		"/accounts/models/sync-upstream-preview",
 		"/user-attributes/batch",
 	} {

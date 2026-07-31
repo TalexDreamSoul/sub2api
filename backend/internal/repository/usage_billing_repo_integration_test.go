@@ -104,13 +104,16 @@ func TestUsageBillingRepositoryApply_DeduplicatesSubscriptionBilling(t *testing.
 		UserID:  user.ID,
 		GroupID: group.ID,
 	})
+	account := mustCreateAccount(t, client, &service.Account{
+		Name: "usage-billing-sub-account-" + uuid.NewString(),
+	})
 
 	requestID := uuid.NewString()
 	cmd := &service.UsageBillingCommand{
 		RequestID:        requestID,
 		APIKeyID:         apiKey.ID,
 		UserID:           user.ID,
-		AccountID:        0,
+		AccountID:        account.ID,
 		SubscriptionID:   &subscription.ID,
 		SubscriptionCost: 2.5,
 	}
@@ -126,6 +129,10 @@ func TestUsageBillingRepositoryApply_DeduplicatesSubscriptionBilling(t *testing.
 	var dailyUsage float64
 	require.NoError(t, integrationDB.QueryRowContext(ctx, "SELECT daily_usage_usd FROM user_subscriptions WHERE id = $1", subscription.ID).Scan(&dailyUsage))
 	require.InDelta(t, 2.5, dailyUsage, 0.000001)
+
+	var ledgerCount int
+	require.NoError(t, integrationDB.QueryRowContext(ctx, `SELECT COUNT(*) FROM subscription_account_usage_ledger WHERE request_id=$1 AND api_key_id=$2`, requestID, apiKey.ID).Scan(&ledgerCount))
+	require.Zero(t, ledgerCount, "disabled subscription refunds must not create an unbounded per-request ledger")
 }
 
 func TestUsageBillingRepositoryApply_RequestFingerprintConflict(t *testing.T) {

@@ -312,6 +312,7 @@
             <AccountUsageCell
               :account="row"
               :today-stats="todayStatsByAccountId[String(row.id)] ?? null"
+              :period-stats="periodStatsByAccountId[String(row.id)] ?? null"
               :today-stats-loading="todayStatsLoading"
               :manual-refresh-token="usageManualRefreshToken"
             />
@@ -453,6 +454,7 @@
     />
     <TempUnschedStatusModal :show="showTempUnsched" :account="tempUnschedAcc" @close="showTempUnsched = false" @reset="handleTempUnschedReset" />
     <ConfirmDialog :show="showDeleteDialog" :title="t('admin.accounts.deleteAccount')" :message="t('admin.accounts.deleteConfirm', { name: deletingAcc?.name })" :confirm-text="t('common.delete')" :cancel-text="t('common.cancel')" :danger="true" @confirm="confirmDelete" @cancel="showDeleteDialog = false" />
+    <ConfirmDialog :show="showResetQuotaDialog" :title="t('admin.accounts.resetQuota')" :message="t('admin.accounts.resetQuotaConfirm', { name: resettingQuotaAcc?.name })" :confirm-text="t('admin.accounts.resetQuota')" :cancel-text="t('common.cancel')" danger @confirm="confirmResetQuota" @cancel="showResetQuotaDialog = false" />
     <ConfirmDialog :show="showCreateShadowDialog" :title="t('admin.accounts.createSparkShadow')" :message="t('admin.accounts.createSparkShadowConfirm', { name: creatingShadowAcc?.name })" @confirm="confirmCreateSparkShadow" @cancel="showCreateShadowDialog = false" />
     <ConfirmDialog :show="showExportDataDialog" :title="t('admin.accounts.dataExport')" :message="t('admin.accounts.dataExportConfirmMessage')" :confirm-text="t('admin.accounts.dataExportConfirm')" :cancel-text="t('common.cancel')" @confirm="handleExportData" @cancel="showExportDataDialog = false">
       <label class="flex items-center gap-2 text-sm text-gray-700 dark:text-gray-300">
@@ -463,6 +465,7 @@
     <ErrorPassthroughRulesModal :show="showErrorPassthrough" @close="showErrorPassthrough = false" />
     <TLSFingerprintProfilesModal :show="showTLSFingerprintProfiles" @close="showTLSFingerprintProfiles = false" />
     <TotpStepUpDialog :controller="accountExportStepUp" />
+    <TotpStepUpDialog :controller="accountResetStepUp" />
   </AppLayout>
 </template>
 
@@ -511,7 +514,7 @@ import { proxyExpiryBadgeClass, proxyExpiryLabelKey } from '@/utils/proxyExpiry'
 import { extractApiErrorMessage } from '@/utils/apiError'
 import { sanitizeUrl } from '@/utils/url'
 import { getFloatingPanelPosition } from '@/utils/floatingPanel'
-import type { Account, AccountPlatform, AccountSchedulerGroupScore, AccountType, Proxy as AccountProxy, AdminGroup, WindowStats, ClaudeModel, UpstreamBillingProbeSnapshot } from '@/types'
+import type { Account, AccountPeriodStats, AccountPlatform, AccountSchedulerGroupScore, AccountType, Proxy as AccountProxy, AdminGroup, WindowStats, ClaudeModel, UpstreamBillingProbeSnapshot } from '@/types'
 
 const { t } = useI18n()
 const appStore = useAppStore()
@@ -570,6 +573,8 @@ const showBulkEdit = ref(false)
 const bulkEditTarget = ref<AccountBulkEditTarget | null>(null)
 const showTempUnsched = ref(false)
 const showDeleteDialog = ref(false)
+const showResetQuotaDialog = ref(false)
+const resetQuotaIdempotencyKey = ref('')
 const showCreateShadowDialog = ref(false)
 const showReAuth = ref(false)
 const showTest = ref(false)
@@ -579,6 +584,7 @@ const showTLSFingerprintProfiles = ref(false)
 const edAcc = ref<Account | null>(null)
 const tempUnschedAcc = ref<Account | null>(null)
 const deletingAcc = ref<Account | null>(null)
+const resettingQuotaAcc = ref<Account | null>(null)
 const creatingShadowAcc = ref<Account | null>(null)
 const reAuthAcc = ref<Account | null>(null)
 const testingAcc = ref<Account | null>(null)
@@ -670,6 +676,7 @@ const AUTO_REFRESH_SILENT_WINDOW_MS = 15000
 const autoRefreshSilentUntil = ref(0)
 const hasPendingListSync = ref(false)
 const todayStatsByAccountId = ref<Record<string, WindowStats>>({})
+const periodStatsByAccountId = ref<Record<string, AccountPeriodStats>>({})
 const todayStatsLoading = ref(false)
 const todayStatsError = ref<string | null>(null)
 const todayStatsReqSeq = ref(0)
@@ -682,6 +689,13 @@ const buildDefaultTodayStats = (): WindowStats => ({
   cost: 0,
   standard_cost: 0,
   user_cost: 0
+})
+
+const buildDefaultPeriodStats = (): AccountPeriodStats => ({
+  today: buildDefaultTodayStats(),
+  last_7_days: buildDefaultTodayStats(),
+  last_30_days: buildDefaultTodayStats(),
+  last_used_at: null
 })
 
 const refreshTodayStatsBatch = async () => {
@@ -699,6 +713,7 @@ const refreshTodayStatsBatch = async () => {
   const reqSeq = ++todayStatsReqSeq.value
   if (accountIDs.length === 0) {
     todayStatsByAccountId.value = {}
+    periodStatsByAccountId.value = {}
     todayStatsError.value = null
     todayStatsLoading.value = false
     return
@@ -708,17 +723,23 @@ const refreshTodayStatsBatch = async () => {
   todayStatsError.value = null
 
   try {
-    const result = await adminAPI.accounts.getBatchTodayStats(accountIDs)
+    const result = await adminAPI.accounts.getBatchPeriodStats(accountIDs)
     if (reqSeq !== todayStatsReqSeq.value) return
     const serverStats = result.stats ?? {}
-    const nextStats: Record<string, WindowStats> = {}
+    const nextTodayStats: Record<string, WindowStats> = {}
+    const nextPeriodStats: Record<string, AccountPeriodStats> = {}
     for (const accountID of accountIDs) {
       const key = String(accountID)
-      nextStats[key] = serverStats[key] ?? buildDefaultTodayStats()
+      const periods = serverStats[key] ?? buildDefaultPeriodStats()
+      nextPeriodStats[key] = periods
+      nextTodayStats[key] = periods.today
     }
-    todayStatsByAccountId.value = nextStats
+    periodStatsByAccountId.value = nextPeriodStats
+    todayStatsByAccountId.value = nextTodayStats
   } catch (error) {
     if (reqSeq !== todayStatsReqSeq.value) return
+    todayStatsByAccountId.value = {}
+    periodStatsByAccountId.value = {}
     todayStatsError.value = 'Failed'
     console.error('Failed to load account today stats:', error)
   } finally {
@@ -1062,6 +1083,7 @@ const isAnyModalOpen = computed(() => {
     showBulkEdit.value ||
     showTempUnsched.value ||
     showDeleteDialog.value ||
+    showResetQuotaDialog.value ||
     showReAuth.value ||
     showTest.value ||
     showStats.value ||
@@ -1892,6 +1914,7 @@ const handleExportData = async () => {
   }
 }
 const accountExportStepUp = useStepUp()
+const accountResetStepUp = useStepUp()
 const closeTestModal = () => { showTest.value = false; testingAcc.value = null }
 const closeStatsModal = () => { showStats.value = false; statsAcc.value = null }
 const closeReAuthModal = () => { showReAuth.value = false; reAuthAcc.value = null }
@@ -1945,14 +1968,41 @@ const handleRecoverState = async (a: Account) => {
     appStore.showError(error?.message || t('admin.accounts.recoverStateFailed'))
   }
 }
-const handleResetQuota = async (a: Account) => {
+const handleResetQuota = (account: Account) => {
+  const retryingSameRequest = resettingQuotaAcc.value?.id === account.id && resetQuotaIdempotencyKey.value !== ''
+  if (!retryingSameRequest) {
+    resetQuotaIdempotencyKey.value = ''
+  }
+  resettingQuotaAcc.value = account
+  showResetQuotaDialog.value = true
+}
+const confirmResetQuota = async () => {
+  const account = resettingQuotaAcc.value
+  if (!account) return
+  showResetQuotaDialog.value = false
   try {
-    const updated = await adminAPI.accounts.resetAccountQuota(a.id)
-    patchAccountInList(updated)
+    if (!resetQuotaIdempotencyKey.value) {
+      resetQuotaIdempotencyKey.value = globalThis.crypto?.randomUUID?.() ?? `${Date.now()}-${Math.random().toString(36).slice(2)}`
+    }
+    const result = await accountResetStepUp.run(() =>
+      adminAPI.accounts.resetAccountQuota(account.id, false, resetQuotaIdempotencyKey.value)
+    )
     enterAutoRefreshSilentWindow()
-    appStore.showSuccess(t('common.success'))
+    resettingQuotaAcc.value = null
+    resetQuotaIdempotencyKey.value = ''
+    appStore.showSuccess(result.status === 'local_pending' ? t('admin.accounts.resetQuotaRefundPending') : t('common.success'))
+    try {
+      await reload()
+    } catch (refreshError) {
+      console.error('Quota reset succeeded but account refresh failed:', refreshError)
+    }
   } catch (error) {
-    console.error('Failed to reset quota:', error)
+    if (isStepUpCancelled(error)) return
+    if (isStepUpBlocked(error)) {
+      appStore.showError(stepUpBlockReason(error) === 'STEP_UP_ADMIN_API_KEY_FORBIDDEN' ? t('stepUp.adminApiKeyForbidden') : t('stepUp.notEnabled'))
+      return
+    }
+    appStore.showError((error as { message?: string })?.message || t('common.error'))
   }
 }
 

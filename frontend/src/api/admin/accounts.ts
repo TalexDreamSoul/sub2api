@@ -11,6 +11,7 @@ import type {
   PaginatedResponse,
   AccountUsageInfo,
   WindowStats,
+  AccountPeriodStats,
   ClaudeModel,
   AccountUsageStatsResponse,
   TempUnschedulableStatus,
@@ -339,14 +340,26 @@ export async function recoverState(id: number): Promise<Account> {
   return data
 }
 
-/**
- * Reset account quota usage
- * @param id - Account ID
- * @returns Updated account
- */
-export async function resetAccountQuota(id: number): Promise<Account> {
-  const { data } = await apiClient.post<Account>(
-    `/admin/accounts/${id}/reset-quota`
+export interface AccountResetRefundResult {
+  adjustments: Array<{ subscription_id: number; user_id: number; group_id: number; daily_refunded_usd: number; weekly_refunded_usd: number; monthly_refunded_usd: number }>
+  daily_refunded_usd: number
+  weekly_refunded_usd: number
+  monthly_refunded_usd: number
+}
+
+export interface AccountResetResult {
+  operation_id: number
+  status: 'completed' | 'local_pending'
+  restore_subscription_usage: boolean
+  refund: AccountResetRefundResult
+}
+
+/** Reset account quota usage with a durable idempotency operation. */
+export async function resetAccountQuota(id: number, restoreSubscriptionUsage = false, idempotencyKey: string = globalThis.crypto?.randomUUID?.() ?? `${Date.now()}-${Math.random().toString(36).slice(2)}`): Promise<AccountResetResult> {
+  const { data } = await apiClient.post<AccountResetResult>(
+    `/admin/accounts/${id}/reset-quota`,
+    { restore_subscription_usage: restoreSubscriptionUsage },
+    { headers: { 'Idempotency-Key': idempotencyKey } },
   )
   return data
 }
@@ -496,6 +509,20 @@ export interface BatchTodayStatsResponse {
  */
 export async function getBatchTodayStats(accountIds: number[]): Promise<BatchTodayStatsResponse> {
   const { data } = await apiClient.post<BatchTodayStatsResponse>('/admin/accounts/today-stats/batch', {
+    account_ids: accountIds
+  })
+  return data
+}
+
+export interface BatchPeriodStatsResponse {
+  stats: Record<string, AccountPeriodStats>
+}
+
+/**
+ * Fetch gateway-observed today/7-day/30-day account usage in one batch.
+ */
+export async function getBatchPeriodStats(accountIds: number[]): Promise<BatchPeriodStatsResponse> {
+  const { data } = await apiClient.post<BatchPeriodStatsResponse>('/admin/accounts/period-stats/batch', {
     account_ids: accountIds
   })
   return data
@@ -822,6 +849,7 @@ export interface OpenAIQuotaResetResult {
   code: string
   credit?: OpenAIQuotaResetCredit | null
   windows_reset: number
+  reset_operation?: AccountResetResult
 }
 
 /**
@@ -835,8 +863,12 @@ export async function queryOpenAIQuota(id: number): Promise<OpenAIQuotaUsage> {
 /**
  * Consume one rate-limit-reset credit for an OpenAI/Codex OAuth account.
  */
-export async function resetOpenAIQuota(id: number): Promise<OpenAIQuotaResetResult> {
-  const { data } = await apiClient.post<OpenAIQuotaResetResult>(`/admin/openai/accounts/${id}/reset-quota`)
+export async function resetOpenAIQuota(id: number, restoreSubscriptionUsage = false, idempotencyKey: string = globalThis.crypto?.randomUUID?.() ?? `${Date.now()}-${Math.random().toString(36).slice(2)}`): Promise<OpenAIQuotaResetResult> {
+  const { data } = await apiClient.post<OpenAIQuotaResetResult>(
+    `/admin/openai/accounts/${id}/reset-quota`,
+    { restore_subscription_usage: restoreSubscriptionUsage },
+    { headers: { 'Idempotency-Key': idempotencyKey } },
+  )
   return data
 }
 
@@ -946,6 +978,7 @@ export const accountsAPI = {
   getUsage,
   getTodayStats,
   getBatchTodayStats,
+  getBatchPeriodStats,
   clearRateLimit,
   recoverState,
   resetAccountQuota,

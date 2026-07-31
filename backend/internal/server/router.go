@@ -134,6 +134,9 @@ func registerRoutes(
 	quotaStatus.Use(panelRateLimiter.PublicIP())
 	quotaStatus.Use(gin.HandlerFunc(optionalJWTAuth))
 	quotaStatus.GET("", h.QuotaStatus.GetPublic)
+	clientLimits := v1.Group("/client")
+	clientLimits.Use(gin.HandlerFunc(apiKeyAuth))
+	clientLimits.GET("/subscription-limits", h.ClientSubscriptionLimits.Get)
 	routes.RegisterGatewayRoutes(r, h, apiKeyAuth, apiKeyService, subscriptionService, apiKeyRuntimeService, opsService, settingService, compositeResolver, cfg)
 	routes.RegisterPaymentRoutes(v1, h.Payment, h.PaymentWebhook, h.Admin.Payment, jwtAuth, adminAuth, auditLog, settingService, panelRateLimiter)
 

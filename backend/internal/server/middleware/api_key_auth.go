@@ -327,7 +327,8 @@ func apiKeyAuthWithSubscription(apiKeyService *service.APIKeyService, subscripti
 
 func shouldSkipAPIKeyBilling(path string) bool {
 	switch strings.TrimSpace(path) {
-	case "/v1/usage",
+	case "/api/v1/client/subscription-limits",
+		"/v1/usage",
 		"/v1/models",
 		"/v1beta/models",
 		"/antigravity/models",

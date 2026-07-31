@@ -69,7 +69,7 @@ var (
 		"OLLAMA_CLOUD_USAGE_SESSION_REQUIRED", "an Ollama web session must be configured first",
 	)
 	ErrOllamaCloudUsageEncryptionKey = infraerrors.BadRequest(
-		"OLLAMA_CLOUD_USAGE_ENCRYPTION_KEY_NOT_CONFIGURED", "cannot store an Ollama web session without a fixed TOTP_ENCRYPTION_KEY",
+		"OLLAMA_CLOUD_USAGE_ENCRYPTION_KEY_NOT_CONFIGURED", "cannot store an Ollama web session without a fixed encryption key; save one in Admin Settings > Security and restart the service, or configure TOTP_ENCRYPTION_KEY in the deployment",
 	)
 	ErrOllamaCloudUsageIdentityChanged = infraerrors.Conflict(
 		"OLLAMA_CLOUD_USAGE_IDENTITY_CHANGED", "account identity or Ollama web session changed during refresh; retry",

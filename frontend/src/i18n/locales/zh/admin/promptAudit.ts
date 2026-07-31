@@ -93,7 +93,7 @@ export default {
     errors: {
       loadConfig: '无法加载提示词审计配置。', loadRuntime: '无法加载提示词审计运行态。', loadGroups: '无法加载分组列表。', loadEvents: '无法加载审计事件。', loadDetail: '无法加载事件详情。', saveConfig: '配置保存失败。', probe: '节点探测失败。', delete: '事件删除失败。', previewDelete: '无法生成删除预览，请检查时间范围。', deleteConfirmation: '删除确认无效或已过期，请重新预览。',
       prompt_audit_config_conflict: '配置已被其他管理员更新。请重新加载服务端配置，再决定如何合并本地草稿。',
-      prompt_audit_encryption_key_required: '未配置固定加密密钥，审计节点 API Key 将在服务重启后失效。请先设置 TOTP_ENCRYPTION_KEY 环境变量并重启服务。',
+      prompt_audit_encryption_key_required: '未配置固定加密密钥，审计节点 API Key 将在服务重启后失效。请先在后台设置 > 安全中保存密钥并重启服务，也可继续使用 TOTP_ENCRYPTION_KEY 部署配置。',
       prompt_guard_requires_audit_enabled: '开启同步阻止前必须先启用提示词审计。', prompt_audit_invalid_endpoint: '审计节点配置无效。', prompt_audit_endpoint_required: '启用审计前至少需要一个启用节点。', prompt_audit_groups_required: '指定分组模式至少需要选择一个分组。', prompt_audit_scanners_required: '至少需要启用一个风险分类。',
     },
   },

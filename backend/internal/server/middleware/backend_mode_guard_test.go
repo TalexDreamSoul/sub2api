@@ -200,10 +200,10 @@ func TestBackendModeAuthGuard(t *testing.T) {
 			wantStatus: http.StatusOK,
 		},
 		{
-			name:       "enabled_blocks_linuxdo_oauth_start",
+			name:       "enabled_allows_linuxdo_oauth_start",
 			enabled:    "true",
 			path:       "/api/v1/auth/oauth/linuxdo/start",
-			wantStatus: http.StatusForbidden,
+			wantStatus: http.StatusOK,
 		},
 		{
 			name:       "enabled_allows_linuxdo_oauth_callback",
@@ -212,10 +212,10 @@ func TestBackendModeAuthGuard(t *testing.T) {
 			wantStatus: http.StatusOK,
 		},
 		{
-			name:       "enabled_blocks_wechat_oauth_start",
+			name:       "enabled_allows_wechat_oauth_start",
 			enabled:    "true",
 			path:       "/api/v1/auth/oauth/wechat/start",
-			wantStatus: http.StatusForbidden,
+			wantStatus: http.StatusOK,
 		},
 		{
 			name:       "enabled_allows_wechat_oauth_callback",
@@ -236,10 +236,10 @@ func TestBackendModeAuthGuard(t *testing.T) {
 			wantStatus: http.StatusOK,
 		},
 		{
-			name:       "enabled_blocks_oidc_oauth_start",
+			name:       "enabled_allows_oidc_oauth_start",
 			enabled:    "true",
 			path:       "/api/v1/auth/oauth/oidc/start",
-			wantStatus: http.StatusForbidden,
+			wantStatus: http.StatusOK,
 		},
 		{
 			name:       "enabled_allows_oidc_oauth_callback",
@@ -248,10 +248,10 @@ func TestBackendModeAuthGuard(t *testing.T) {
 			wantStatus: http.StatusOK,
 		},
 		{
-			name:       "enabled_blocks_github_oauth_start",
+			name:       "enabled_allows_github_oauth_start",
 			enabled:    "true",
 			path:       "/api/v1/auth/oauth/github/start",
-			wantStatus: http.StatusForbidden,
+			wantStatus: http.StatusOK,
 		},
 		{
 			name:       "enabled_allows_github_oauth_callback",
@@ -266,10 +266,10 @@ func TestBackendModeAuthGuard(t *testing.T) {
 			wantStatus: http.StatusOK,
 		},
 		{
-			name:       "enabled_blocks_google_oauth_start",
+			name:       "enabled_allows_google_oauth_start",
 			enabled:    "true",
 			path:       "/api/v1/auth/oauth/google/start",
-			wantStatus: http.StatusForbidden,
+			wantStatus: http.StatusOK,
 		},
 		{
 			name:       "enabled_allows_google_oauth_callback",
@@ -284,9 +284,27 @@ func TestBackendModeAuthGuard(t *testing.T) {
 			wantStatus: http.StatusOK,
 		},
 		{
-			name:       "enabled_blocks_dingtalk_oauth_start",
+			name:       "enabled_allows_dingtalk_oauth_start",
 			enabled:    "true",
 			path:       "/api/v1/auth/oauth/dingtalk/start",
+			wantStatus: http.StatusOK,
+		},
+		{
+			name:       "enabled_allows_feishu_oauth_start",
+			enabled:    "true",
+			path:       "/api/v1/auth/oauth/feishu/start",
+			wantStatus: http.StatusOK,
+		},
+		{
+			name:       "enabled_allows_feishu_oauth_callback",
+			enabled:    "true",
+			path:       "/api/v1/auth/oauth/feishu/callback",
+			wantStatus: http.StatusOK,
+		},
+		{
+			name:       "enabled_blocks_oauth_bind_start",
+			enabled:    "true",
+			path:       "/api/v1/auth/oauth/feishu/bind/start",
 			wantStatus: http.StatusForbidden,
 		},
 		{

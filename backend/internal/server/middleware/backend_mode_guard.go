@@ -42,6 +42,13 @@ func backendModeAllowsAuthPath(path string) bool {
 	}
 
 	for _, suffix := range []string{
+		"/auth/oauth/linuxdo/start",
+		"/auth/oauth/wechat/start",
+		"/auth/oauth/oidc/start",
+		"/auth/oauth/github/start",
+		"/auth/oauth/google/start",
+		"/auth/oauth/dingtalk/start",
+		"/auth/oauth/feishu/start",
 		"/auth/oauth/linuxdo/callback",
 		"/auth/oauth/wechat/callback",
 		"/auth/oauth/wechat/payment/callback",
@@ -49,6 +56,7 @@ func backendModeAllowsAuthPath(path string) bool {
 		"/auth/oauth/github/callback",
 		"/auth/oauth/google/callback",
 		"/auth/oauth/dingtalk/callback",
+		"/auth/oauth/feishu/callback",
 		"/auth/oauth/github/complete-registration",
 		"/auth/oauth/google/complete-registration",
 		"/auth/oauth/linuxdo/complete-registration",

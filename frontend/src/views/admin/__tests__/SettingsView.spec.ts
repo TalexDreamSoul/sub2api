@@ -821,6 +821,8 @@ describe("admin SettingsView payment visible method controls", () => {
     await flushPromises();
     await openSecurityTab(wrapper);
 
+    await wrapper.get('[data-testid="totp-toggle"]').setValue(true);
+    await wrapper.get('[data-testid="passkey-toggle"]').setValue(true);
     await wrapper.get('[data-testid="totp-encryption-key-input"]').setValue(
       "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef",
     );
@@ -835,6 +837,8 @@ describe("admin SettingsView payment visible method controls", () => {
 
     expect(updateSettings).toHaveBeenCalledWith(
       expect.objectContaining({
+        totp_enabled: true,
+        passkey_enabled: true,
         totp_encryption_key:
           "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef",
         passkey_rp_id: "router.example.com",
@@ -846,7 +850,7 @@ describe("admin SettingsView payment visible method controls", () => {
     );
   });
 
-  it("disables passkey sign-in when the RP configuration is unavailable", async () => {
+  it("keeps the passkey switch interactive before RP configuration is active", async () => {
     getSettings.mockResolvedValueOnce({
       ...baseSettingsResponse,
       passkey_enabled: false,
@@ -860,7 +864,7 @@ describe("admin SettingsView payment visible method controls", () => {
     await openSecurityTab(wrapper);
 
     const settings = wrapper.get('[data-testid="passkey-settings"]');
-    expect(settings.get('[data-testid="passkey-toggle"]').attributes("disabled")).toBeDefined();
+    expect(settings.get('[data-testid="passkey-toggle"]').attributes("disabled")).toBeUndefined();
     expect(settings.get('[data-testid="passkey-config-status"]').text()).toContain(
       "admin.settings.security.passkeyNotConfigured",
     );

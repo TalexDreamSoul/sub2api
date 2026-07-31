@@ -166,6 +166,9 @@ func (s *SettingService) IsPasswordResetEnabled(ctx context.Context) bool {
 
 // IsTotpEnabled 检查是否启用 TOTP 双因素认证功能
 func (s *SettingService) IsTotpEnabled(ctx context.Context) bool {
+	if !s.IsTotpEncryptionKeyConfigured() {
+		return false
+	}
 	value, err := s.settingRepo.GetValue(ctx, SettingKeyTotpEnabled)
 	if err != nil {
 		return false // 默认关闭
@@ -206,16 +209,21 @@ func (s *SettingService) passkeyConfigured() bool {
 	return s != nil && s.cfg != nil && s.cfg.WebAuthn.Enabled
 }
 
-// passkeySettingEnabled must stay ANDed with passkeyConfigured: a stale
-// "true" row after the WebAuthn config is removed would otherwise make the
-// admin update gate reject every settings save while the UI toggle is locked.
+// passkeySettingEnabled is the effective runtime switch and must stay ANDed
+// with the WebAuthn configuration loaded by this process.
 func (s *SettingService) passkeySettingEnabled(settings map[string]string) bool {
 	if !s.passkeyConfigured() {
 		return false
 	}
+	return s.passkeyDesiredSettingEnabled(settings)
+}
+
+// passkeyDesiredSettingEnabled is shown in the admin form. It may be true while
+// a newly saved relying-party configuration is waiting for a restart.
+func (s *SettingService) passkeyDesiredSettingEnabled(settings map[string]string) bool {
 	value, ok := settings[SettingKeyPasskeyEnabled]
 	if !ok {
-		return true
+		return s.passkeyConfigured()
 	}
 	return value == "true"
 }

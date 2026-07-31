@@ -367,7 +367,7 @@ func (s *SettingService) parseSettings(settings map[string]string) *SystemSettin
 		TotpEnabled:                      settings[SettingKeyTotpEnabled] == "true",
 		TotpEncryptionKeySaved:           storedTotpKey != "",
 		TotpRestartRequired:              totpRestartRequired,
-		PasskeyEnabled:                   s.passkeySettingEnabled(settings),
+		PasskeyEnabled:                   s.passkeyDesiredSettingEnabled(settings),
 		PasskeyRPID:                      passkeyRPID,
 		PasskeyRPOrigins:                 passkeyRPOrigins,
 		PasskeyConfigurationSaved:        passkeyConfigurationSaved,

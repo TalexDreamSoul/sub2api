@@ -62,7 +62,11 @@ func (s *settingGetAllRepoStub) Get(ctx context.Context, key string) (*Setting, 
 }
 
 func (s *settingGetAllRepoStub) GetValue(ctx context.Context, key string) (string, error) {
-	panic("unexpected GetValue call")
+	value, ok := s.values[key]
+	if !ok {
+		return "", ErrSettingNotFound
+	}
+	return value, nil
 }
 
 func (s *settingGetAllRepoStub) Set(ctx context.Context, key, value string) error {
@@ -912,16 +916,37 @@ func TestSettingService_PasskeySwitchPersistsAndDefaultsToConfigured(t *testing.
 	require.False(t, publicSettings.PasskeyEnabled)
 }
 
-// 移除 WebAuthn 配置后，残留的 passkey_enabled="true" 不得再让 GetAllSettings
-// 报告开关开启：admin 更新门控以此为准，一旦误报为 true 会拒绝所有设置保存，
-// 而此时前端开关处于禁用态，管理员无法在 UI 里自救。
-func TestSettingService_StalePasskeyTrueWithoutConfigReportsDisabled(t *testing.T) {
+// A desired Passkey switch may stay on while RP configuration waits for a
+// restart, but the runtime switch must remain off until WebAuthn is loaded.
+func TestSettingService_PendingPasskeyEnableIsRuntimeDisabled(t *testing.T) {
 	repo := &settingGetAllRepoStub{values: map[string]string{
 		SettingKeyPasskeyEnabled: "true",
 	}}
-	service := NewSettingService(repo, &config.Config{})
+	svc := NewSettingService(repo, &config.Config{})
 
-	settings, err := service.GetAllSettings(context.Background())
+	settings, err := svc.GetAllSettings(context.Background())
 	require.NoError(t, err)
-	require.False(t, settings.PasskeyEnabled)
+	require.True(t, settings.PasskeyEnabled)
+	enabled, err := svc.PasskeyEnabled(context.Background())
+	require.NoError(t, err)
+	require.False(t, enabled)
+}
+
+func TestSettingService_PendingTotpEnableIsRuntimeDisabled(t *testing.T) {
+	repo := &settingGetAllRepoStub{values: map[string]string{
+		SettingKeyTotpEnabled: "true",
+	}}
+	svc := NewSettingService(repo, &config.Config{})
+
+	settings, err := svc.GetAllSettings(context.Background())
+	require.NoError(t, err)
+	require.True(t, settings.TotpEnabled)
+	require.False(t, svc.IsTotpEnabled(context.Background()))
+
+	publicRepo := &forwardedIPMigrationRepoStub{values: map[string]string{
+		SettingKeyTotpEnabled: "true",
+	}}
+	publicSettings, err := NewSettingService(publicRepo, &config.Config{}).GetPublicSettings(context.Background())
+	require.NoError(t, err)
+	require.False(t, publicSettings.TotpEnabled)
 }

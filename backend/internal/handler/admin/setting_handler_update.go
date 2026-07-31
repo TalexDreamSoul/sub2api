@@ -611,8 +611,9 @@ func (h *SettingHandler) UpdateSettings(c *gin.Context) {
 	}
 	if passkeyEnabled {
 		configured, _, _ := h.settingService.PasskeyConfiguration()
-		if !configured {
-			response.BadRequest(c, "Passkey sign-in requires a valid WebAuthn RP ID and allowed HTTPS origins in the deployment configuration")
+		configurationSubmitted := passkeyRPIDSent || passkeyOriginsSent
+		if !configured && !previousSettings.PasskeyConfigurationSaved && !configurationSubmitted {
+			response.BadRequest(c, "Passkey sign-in requires a valid RP ID and allowed HTTPS origins. Configure them in this request or save them before enabling Passkey.")
 			return
 		}
 	}
@@ -747,13 +748,12 @@ func (h *SettingHandler) UpdateSettings(c *gin.Context) {
 		}
 	}
 
-	// TOTP 双因素认证参数验证
-	// 新启用 TOTP 前，固定密钥必须已经在当前进程生效。
-	if req.TotpEnabled && !previousSettings.TotpEnabled {
-		if !h.settingService.IsTotpEncryptionKeyConfigured() {
-			response.BadRequest(c, "Cannot enable TOTP until a fixed encryption key is active. Save a 64-character hexadecimal key in Security settings, restart the service, then enable TOTP.")
-			return
-		}
+	// 新配置可与开关在同一次请求中保存；运行时仍会在固定密钥加载前强制关闭。
+	if req.TotpEnabled && !previousSettings.TotpEnabled &&
+		!h.settingService.IsTotpEncryptionKeyConfigured() &&
+		totpEncryptionKey == "" && !previousSettings.TotpEncryptionKeySaved {
+		response.BadRequest(c, "Cannot enable TOTP without a fixed encryption key. Configure a 64-character hexadecimal key in this request or save one before enabling TOTP.")
+		return
 	}
 	loginAgreementMode := strings.ToLower(strings.TrimSpace(req.LoginAgreementMode))
 	if loginAgreementMode == "" {

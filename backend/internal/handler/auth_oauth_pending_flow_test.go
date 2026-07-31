@@ -2437,6 +2437,10 @@ CREATE TABLE IF NOT EXISTS user_affiliates (
 			AccessTokenExpireMinutes: 60,
 			RefreshTokenExpireDays:   7,
 		},
+		Totp: config.TotpConfig{
+			EncryptionKey:           strings.Repeat("ab", 32),
+			EncryptionKeyConfigured: options.settingValues[service.SettingKeyTotpEnabled] == "true",
+		},
 		Default: config.DefaultConfig{
 			UserBalance:     0,
 			UserConcurrency: 1,

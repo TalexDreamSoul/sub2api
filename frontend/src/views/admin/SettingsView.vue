@@ -1566,7 +1566,7 @@
                   </div>
                   <Toggle
                     v-model="form.totp_enabled"
-                    :disabled="!form.totp_encryption_key_configured"
+                    data-testid="totp-toggle"
                   />
                 </div>
                 <div class="mt-4">
@@ -1625,7 +1625,6 @@
                   <Toggle
                     v-model="form.passkey_enabled"
                     data-testid="passkey-toggle"
-                    :disabled="!form.passkey_configured"
                   />
                 </div>
                 <div

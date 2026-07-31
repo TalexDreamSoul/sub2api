@@ -66,11 +66,15 @@ func TestUpdateSettingsRuntimeSecurityConfigurationIsValidatedAndRedacted(t *tes
 	key := strings.Repeat("ab", 32)
 
 	rec := doUpdateSettings(t, h, map[string]any{
+		"totp_enabled":        true,
 		"totp_encryption_key": key,
+		"passkey_enabled":     true,
 		"passkey_rp_id":       "router.example.com",
 		"passkey_rp_origins":  []string{"https://router.example.com"},
 	}, prepareRuntimeSecuritySuperAdmin)
 	require.Equal(t, http.StatusOK, rec.Code)
+	require.Equal(t, "true", repo.values[service.SettingKeyTotpEnabled])
+	require.Equal(t, "true", repo.values[service.SettingKeyPasskeyEnabled])
 	require.Equal(t, key, repo.values[service.SettingKeyTotpEncryptionKey])
 	require.Equal(t, "router.example.com", repo.values[service.SettingKeyWebAuthnRPID])
 	require.NotContains(t, rec.Body.String(), key, "write-only encryption key must never be returned")

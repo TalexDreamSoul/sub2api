@@ -851,6 +851,38 @@ func TestSettingService_UpdateSettings_RejectsInvalidPaymentVisibleMethodSource(
 	require.Nil(t, repo.updates)
 }
 
+func TestSettingService_RuntimeSecurityConfigurationPersists(t *testing.T) {
+	repo := &settingUpdateRepoStub{}
+	svc := NewSettingService(repo, &config.Config{})
+
+	err := svc.UpdateSettings(context.Background(), &SystemSettings{
+		TotpEncryptionKey: "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef",
+		PasskeyRPID:       "router.example.com",
+		PasskeyRPOrigins:  []string{"https://router.example.com"},
+	})
+	require.NoError(t, err)
+	require.Equal(t, "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef", repo.updates[SettingKeyTotpEncryptionKey])
+	require.Equal(t, "router.example.com", repo.updates[SettingKeyWebAuthnRPID])
+	require.JSONEq(t, `["https://router.example.com"]`, repo.updates[SettingKeyWebAuthnRPOrigins])
+}
+
+func TestSettingService_RuntimeSecurityRestartState(t *testing.T) {
+	key := "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+	svc := NewSettingService(&settingGetAllRepoStub{values: map[string]string{
+		SettingKeyTotpEncryptionKey: key,
+		SettingKeyWebAuthnRPID:      "router.example.com",
+		SettingKeyWebAuthnRPOrigins: `["https://router.example.com"]`,
+	}}, &config.Config{})
+
+	settings, err := svc.GetAllSettings(context.Background())
+	require.NoError(t, err)
+	require.True(t, settings.TotpEncryptionKeySaved)
+	require.True(t, settings.TotpRestartRequired)
+	require.True(t, settings.PasskeyConfigurationSaved)
+	require.True(t, settings.PasskeyRestartRequired)
+	require.Empty(t, settings.TotpEncryptionKey, "read models must not expose the stored key")
+}
+
 func TestSettingService_PasskeySwitchPersistsAndDefaultsToConfigured(t *testing.T) {
 	cfg := &config.Config{WebAuthn: config.WebAuthnConfig{
 		Enabled:   true,

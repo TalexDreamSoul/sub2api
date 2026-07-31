@@ -329,6 +329,33 @@ func (s *SettingService) parseSettings(settings map[string]string) *SystemSettin
 			forwardedClientIPHeaders = parsed
 		}
 	}
+	storedTotpKey := strings.TrimSpace(settings[SettingKeyTotpEncryptionKey])
+	passkeyRPID := ""
+	passkeyRPOrigins := []string{}
+	if s != nil && s.cfg != nil {
+		passkeyRPID = s.cfg.WebAuthn.RPID
+		passkeyRPOrigins = append([]string{}, s.cfg.WebAuthn.RPOrigins...)
+	}
+	storedPasskeyRPID := strings.ToLower(strings.TrimSpace(settings[SettingKeyWebAuthnRPID]))
+	storedPasskeyOrigins := []string{}
+	if raw, ok := settings[SettingKeyWebAuthnRPOrigins]; ok && strings.TrimSpace(raw) != "" {
+		if err := json.Unmarshal([]byte(raw), &storedPasskeyOrigins); err != nil {
+			slog.Error("invalid persisted WebAuthn RP origins", "error", err)
+			storedPasskeyOrigins = []string{}
+		}
+	}
+	passkeyConfigurationSaved := storedPasskeyRPID != "" && len(storedPasskeyOrigins) > 0
+	if passkeyConfigurationSaved {
+		passkeyRPID = storedPasskeyRPID
+		passkeyRPOrigins = storedPasskeyOrigins
+	}
+	totpRestartRequired := storedTotpKey != "" && s != nil && s.cfg != nil && storedTotpKey != s.cfg.Totp.EncryptionKey
+	passkeyRestartRequired := false
+	if passkeyConfigurationSaved && s != nil && s.cfg != nil {
+		passkeyRestartRequired = !s.cfg.WebAuthn.Enabled ||
+			storedPasskeyRPID != s.cfg.WebAuthn.RPID ||
+			strings.Join(storedPasskeyOrigins, "\x00") != strings.Join(s.cfg.WebAuthn.RPOrigins, "\x00")
+	}
 	result := &SystemSettings{
 		RegistrationEnabled:              settings[SettingKeyRegistrationEnabled] == "true",
 		EmailVerifyEnabled:               emailVerifyEnabled,
@@ -338,7 +365,13 @@ func (s *SettingService) parseSettings(settings map[string]string) *SystemSettin
 		FrontendURL:                      settings[SettingKeyFrontendURL],
 		InvitationCodeEnabled:            settings[SettingKeyInvitationCodeEnabled] == "true",
 		TotpEnabled:                      settings[SettingKeyTotpEnabled] == "true",
+		TotpEncryptionKeySaved:           storedTotpKey != "",
+		TotpRestartRequired:              totpRestartRequired,
 		PasskeyEnabled:                   s.passkeySettingEnabled(settings),
+		PasskeyRPID:                      passkeyRPID,
+		PasskeyRPOrigins:                 passkeyRPOrigins,
+		PasskeyConfigurationSaved:        passkeyConfigurationSaved,
+		PasskeyRestartRequired:           passkeyRestartRequired,
 		SessionBindingEnabled:            settings[SettingKeySessionBindingEnabled] == "true", // 默认关闭
 		StepUpEnabled:                    settings[SettingKeyStepUpEnabled] == "true",         // 默认关闭
 		AuditLogRetentionDays:            parseAuditLogRetentionDays(settings[SettingKeyAuditLogRetentionDays]),

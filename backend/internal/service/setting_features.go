@@ -220,10 +220,16 @@ func (s *SettingService) passkeySettingEnabled(settings map[string]string) bool 
 	return value == "true"
 }
 
-// IsTotpEncryptionKeyConfigured 检查 TOTP 加密密钥是否已手动配置
-// 只有手动配置了密钥才允许在管理后台启用 TOTP 功能
+// IsTotpEncryptionKeyConfigured 检查当前进程是否已加载固定 TOTP 加密密钥。
 func (s *SettingService) IsTotpEncryptionKeyConfigured() bool {
-	return s.cfg.Totp.EncryptionKeyConfigured
+	return s != nil && s.cfg != nil && s.cfg.Totp.EncryptionKeyConfigured
+}
+
+// IsCurrentTotpEncryptionKey checks the active encryption root without
+// exposing it through an API response.
+func (s *SettingService) IsCurrentTotpEncryptionKey(key string) bool {
+	return s != nil && s.cfg != nil && s.cfg.Totp.EncryptionKeyConfigured &&
+		strings.EqualFold(strings.TrimSpace(key), strings.TrimSpace(s.cfg.Totp.EncryptionKey))
 }
 
 // IsSessionBindingEnabled 检查会话 IP/UA 绑定是否启用（默认关闭）。

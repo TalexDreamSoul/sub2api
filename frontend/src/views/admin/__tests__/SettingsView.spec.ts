@@ -378,8 +378,12 @@ const baseSettingsResponse = {
   password_reset_enabled: false,
   totp_enabled: false,
   totp_encryption_key_configured: false,
+  totp_encryption_key_saved: false,
+  totp_restart_required: false,
   passkey_enabled: true,
   passkey_configured: true,
+  passkey_configuration_saved: false,
+  passkey_restart_required: false,
   passkey_rp_id: "sub3.nebula-spaces.com",
   passkey_rp_origins: ["https://sub3.nebula-spaces.com"],
   default_balance: 0,
@@ -778,8 +782,15 @@ describe("admin SettingsView payment visible method controls", () => {
     const settings = wrapper.get('[data-testid="passkey-settings"]');
     const toggle = settings.get('[data-testid="passkey-toggle"]');
     expect(toggle.attributes("disabled")).toBeUndefined();
-    expect(settings.text()).toContain("sub3.nebula-spaces.com");
-    expect(settings.text()).toContain("https://sub3.nebula-spaces.com");
+    const rpIDInput = settings.get('[data-testid="passkey-rp-id-input"]');
+    expect(rpIDInput.element).toHaveProperty(
+      "value",
+      "sub3.nebula-spaces.com",
+    );
+    expect(rpIDInput.attributes("disabled")).toBeDefined();
+    expect(
+      settings.get('[data-testid="passkey-rp-origins-input"]').element,
+    ).toHaveProperty("value", "https://sub3.nebula-spaces.com");
 
     await toggle.setValue(false);
     await wrapper.find("form").trigger("submit.prevent");
@@ -787,6 +798,51 @@ describe("admin SettingsView payment visible method controls", () => {
 
     expect(updateSettings).toHaveBeenCalledWith(
       expect.objectContaining({ passkey_enabled: false }),
+    );
+    const payload = updateSettings.mock.calls[0]?.[0];
+    expect(payload).not.toHaveProperty("passkey_rp_id");
+    expect(payload).not.toHaveProperty("passkey_rp_origins");
+  });
+
+  it("edits and saves runtime TOTP and passkey configuration", async () => {
+    getSettings.mockResolvedValueOnce({
+      ...baseSettingsResponse,
+      totp_encryption_key_configured: false,
+      totp_encryption_key_saved: false,
+      totp_restart_required: false,
+      passkey_enabled: false,
+      passkey_configured: false,
+      passkey_restart_required: false,
+      passkey_rp_id: "",
+      passkey_rp_origins: [],
+    });
+    const wrapper = mountView();
+
+    await flushPromises();
+    await openSecurityTab(wrapper);
+
+    await wrapper.get('[data-testid="totp-encryption-key-input"]').setValue(
+      "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef",
+    );
+    await wrapper.get('[data-testid="passkey-rp-id-input"]').setValue(
+      "router.example.com",
+    );
+    await wrapper.get('[data-testid="passkey-rp-origins-input"]').setValue(
+      "https://router.example.com\nhttps://admin.router.example.com",
+    );
+    await wrapper.find("form").trigger("submit.prevent");
+    await flushPromises();
+
+    expect(updateSettings).toHaveBeenCalledWith(
+      expect.objectContaining({
+        totp_encryption_key:
+          "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef",
+        passkey_rp_id: "router.example.com",
+        passkey_rp_origins: [
+          "https://router.example.com",
+          "https://admin.router.example.com",
+        ],
+      }),
     );
   });
 
@@ -808,6 +864,12 @@ describe("admin SettingsView payment visible method controls", () => {
     expect(settings.get('[data-testid="passkey-config-status"]').text()).toContain(
       "admin.settings.security.passkeyNotConfigured",
     );
+
+    await wrapper.find("form").trigger("submit.prevent");
+    await flushPromises();
+    const payload = updateSettings.mock.calls[0]?.[0];
+    expect(payload).not.toHaveProperty("passkey_rp_id");
+    expect(payload).not.toHaveProperty("passkey_rp_origins");
   });
 
   it("loads, edits, validates, and saves forwarded client-IP headers", async () => {

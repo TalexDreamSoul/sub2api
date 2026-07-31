@@ -19,8 +19,15 @@ type SystemSettings struct {
 	PasswordResetEnabled             bool
 	FrontendURL                      string
 	InvitationCodeEnabled            bool
-	TotpEnabled                      bool // TOTP 双因素认证
+	TotpEnabled                      bool   // TOTP 双因素认证
+	TotpEncryptionKey                string // 只写；空值表示不修改已保存密钥
+	TotpEncryptionKeySaved           bool
+	TotpRestartRequired              bool
 	PasskeyEnabled                   bool // Passkey 登录
+	PasskeyRPID                      string
+	PasskeyRPOrigins                 []string
+	PasskeyConfigurationSaved        bool
+	PasskeyRestartRequired           bool
 	SessionBindingEnabled            bool // 会话 IP/UA 绑定（变更即失效）
 	StepUpEnabled                    bool // 敏感操作 step-up 2FA 门控
 	AuditLogRetentionDays            int  // 审计日志保留天数（<=0 永久保留）

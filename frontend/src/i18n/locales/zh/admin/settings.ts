@@ -133,16 +133,23 @@ export default {
         frontendUrlHint: '用于生成邮件中的密码重置链接，例如 https://example.com',
         totp: '双因素认证 (2FA)',
         totpHint: '允许用户使用 Google Authenticator 等应用进行二次验证',
-        totpKeyNotConfigured:
-          '请先在环境变量中配置 TOTP_ENCRYPTION_KEY。使用命令 openssl rand -hex 32 生成密钥。'
+        totpEncryptionKey: 'TOTP 加密密钥',
+        totpEncryptionKeyPlaceholder: '64 位十六进制密钥（保存后不回显）',
+        generateKey: '生成密钥',
+        totpKeyConfigured: '固定加密密钥已在当前进程生效。',
+        totpKeyNotConfigured: '输入或生成密钥并保存，重启服务后即可启用 TOTP。',
+        totpRestartRequired: '密钥已保存，重启服务后生效。重启前不能启用 TOTP。'
       },
       security: {
         passkey: 'Passkey 登录',
         passkeyHint: '当依赖方配置有效时，允许无密码登录及用户自行管理 Passkey。',
         passkeyConfigured: 'WebAuthn 依赖方配置有效。',
-        passkeyNotConfigured: '请先配置有效的 RP ID 与允许的 HTTPS 来源，再启用 Passkey 登录。',
+        passkeyNotConfigured: '填写 RP ID 与允许的 HTTPS 来源并保存，重启服务后即可启用 Passkey 登录。',
+        passkeyRestartRequired: 'WebAuthn 配置已保存，重启服务后生效。重启前继续使用当前配置。',
         passkeyRPID: 'RP ID',
+        passkeyRPIDHint: '不带协议、端口或路径的域名，例如 example.com。配置生效后不可在线更换，以免已有 Passkey 失效。',
         passkeyOrigins: '允许的 HTTPS 来源',
+        passkeyOriginsHint: '每行一个完整 origin，例如 https://example.com。仅 localhost 可使用 HTTP。',
         passkeyValueNotConfigured: '未配置',
         stepUp: '敏感操作二次验证 (step-up 2FA)',
         stepUpHint: '开启后，账号/代理导出、备份创建与下载、S3 配置修改、提升管理员等敏感操作需要先完成 TOTP 二次验证（15 分钟内有效）。开启前需本人已启用 2FA；关闭该开关本身也需要二次验证。',

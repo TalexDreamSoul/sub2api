@@ -157,7 +157,7 @@ func (h *SettingHandler) GetSettings(c *gin.Context) {
 	if paymentCfg == nil {
 		paymentCfg = &service.PaymentConfig{}
 	}
-	passkeyConfigured, passkeyRPID, passkeyRPOrigins := h.settingService.PasskeyConfiguration()
+	passkeyConfigured, _, _ := h.settingService.PasskeyConfiguration()
 
 	payload := dto.SystemSettings{
 		RegistrationEnabled:                                    settings.RegistrationEnabled,
@@ -169,10 +169,14 @@ func (h *SettingHandler) GetSettings(c *gin.Context) {
 		InvitationCodeEnabled:                                  settings.InvitationCodeEnabled,
 		TotpEnabled:                                            settings.TotpEnabled,
 		TotpEncryptionKeyConfigured:                            h.settingService.IsTotpEncryptionKeyConfigured(),
+		TotpEncryptionKeySaved:                                 settings.TotpEncryptionKeySaved,
+		TotpRestartRequired:                                    settings.TotpRestartRequired,
 		PasskeyEnabled:                                         settings.PasskeyEnabled,
 		PasskeyConfigured:                                      passkeyConfigured,
-		PasskeyRPID:                                            passkeyRPID,
-		PasskeyRPOrigins:                                       passkeyRPOrigins,
+		PasskeyConfigurationSaved:                              settings.PasskeyConfigurationSaved,
+		PasskeyRestartRequired:                                 settings.PasskeyRestartRequired,
+		PasskeyRPID:                                            settings.PasskeyRPID,
+		PasskeyRPOrigins:                                       settings.PasskeyRPOrigins,
 		SessionBindingEnabled:                                  settings.SessionBindingEnabled,
 		StepUpEnabled:                                          settings.StepUpEnabled,
 		AuditLogRetentionDays:                                  settings.AuditLogRetentionDays,

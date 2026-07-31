@@ -1554,28 +1554,58 @@
               </div>
 
               <!-- TOTP 2FA -->
-              <div
-                class="flex items-center justify-between border-t border-gray-100 pt-4 dark:border-dark-700"
-              >
-                <div>
-                  <label class="font-medium text-gray-900 dark:text-white">{{
-                    t("admin.settings.registration.totp")
+              <div class="border-t border-gray-100 pt-4 dark:border-dark-700">
+                <div class="flex items-start justify-between gap-4">
+                  <div>
+                    <label class="font-medium text-gray-900 dark:text-white">{{
+                      t("admin.settings.registration.totp")
+                    }}</label>
+                    <p class="text-sm text-gray-500 dark:text-gray-400">
+                      {{ t("admin.settings.registration.totpHint") }}
+                    </p>
+                  </div>
+                  <Toggle
+                    v-model="form.totp_enabled"
+                    :disabled="!form.totp_encryption_key_configured"
+                  />
+                </div>
+                <div class="mt-4">
+                  <label class="input-label">{{
+                    t("admin.settings.registration.totpEncryptionKey")
                   }}</label>
-                  <p class="text-sm text-gray-500 dark:text-gray-400">
-                    {{ t("admin.settings.registration.totpHint") }}
-                  </p>
-                  <!-- Warning when encryption key not configured -->
+                  <div class="flex gap-2">
+                    <input
+                      v-model.trim="form.totp_encryption_key"
+                      data-testid="totp-encryption-key-input"
+                      type="password"
+                      autocomplete="new-password"
+                      maxlength="64"
+                      class="input font-mono"
+                      :disabled="form.totp_encryption_key_configured"
+                      :placeholder="t('admin.settings.registration.totpEncryptionKeyPlaceholder')"
+                    />
+                    <button
+                      type="button"
+                      class="btn btn-secondary shrink-0"
+                      :disabled="form.totp_encryption_key_configured"
+                      @click="generateTotpEncryptionKey"
+                    >
+                      {{ t("admin.settings.registration.generateKey") }}
+                    </button>
+                  </div>
                   <p
-                    v-if="!form.totp_encryption_key_configured"
-                    class="mt-2 text-sm text-amber-600 dark:text-amber-400"
+                    class="mt-2 text-sm"
+                    :class="form.totp_restart_required ? 'text-amber-600 dark:text-amber-400' : 'text-gray-500 dark:text-gray-400'"
                   >
-                    {{ t("admin.settings.registration.totpKeyNotConfigured") }}
+                    {{
+                      form.totp_restart_required
+                        ? t("admin.settings.registration.totpRestartRequired")
+                        : form.totp_encryption_key_configured
+                          ? t("admin.settings.registration.totpKeyConfigured")
+                          : t("admin.settings.registration.totpKeyNotConfigured")
+                    }}
                   </p>
                 </div>
-                <Toggle
-                  v-model="form.totp_enabled"
-                  :disabled="!form.totp_encryption_key_configured"
-                />
               </div>
 
               <!-- Passkey sign-in -->
@@ -1601,36 +1631,56 @@
                 <div
                   class="mt-3 rounded-lg border px-3 py-2 text-sm"
                   :class="
-                    form.passkey_configured
-                      ? 'border-green-200 bg-green-50 text-green-800 dark:border-green-900 dark:bg-green-950/40 dark:text-green-300'
-                      : 'border-amber-200 bg-amber-50 text-amber-800 dark:border-amber-900 dark:bg-amber-950/40 dark:text-amber-300'
+                    form.passkey_restart_required
+                      ? 'border-amber-200 bg-amber-50 text-amber-800 dark:border-amber-900 dark:bg-amber-950/40 dark:text-amber-300'
+                      : form.passkey_configured
+                        ? 'border-green-200 bg-green-50 text-green-800 dark:border-green-900 dark:bg-green-950/40 dark:text-green-300'
+                        : 'border-gray-200 bg-gray-50 text-gray-700 dark:border-dark-700 dark:bg-dark-800 dark:text-gray-300'
                   "
                   data-testid="passkey-config-status"
                 >
-                  <p class="font-medium">
-                    {{
-                      form.passkey_configured
+                  {{
+                    form.passkey_restart_required
+                      ? t("admin.settings.security.passkeyRestartRequired")
+                      : form.passkey_configured
                         ? t("admin.settings.security.passkeyConfigured")
                         : t("admin.settings.security.passkeyNotConfigured")
-                    }}
-                  </p>
-                  <p class="mt-1 break-all">
-                    {{ t("admin.settings.security.passkeyRPID") }}:
-                    {{
-                      form.passkey_rp_id ||
-                      t("admin.settings.security.passkeyValueNotConfigured")
-                    }}
-                  </p>
-                  <p class="mt-1 break-all">
-                    {{ t("admin.settings.security.passkeyOrigins") }}:
-                    {{
-                      form.passkey_rp_origins.length > 0
-                        ? form.passkey_rp_origins.join(", ")
-                        : t(
-                            "admin.settings.security.passkeyValueNotConfigured",
-                          )
-                    }}
-                  </p>
+                  }}
+                </div>
+                <div class="mt-4 grid grid-cols-1 gap-4 lg:grid-cols-2">
+                  <div>
+                    <label class="input-label">{{
+                      t("admin.settings.security.passkeyRPID")
+                    }}</label>
+                    <input
+                      v-model.trim="form.passkey_rp_id"
+                      data-testid="passkey-rp-id-input"
+                      type="text"
+                      class="input font-mono"
+                      placeholder="example.com"
+                      :disabled="form.passkey_configured"
+                      @input="passkeyConfigurationDirty = true"
+                    />
+                    <p class="mt-1 text-xs text-gray-500 dark:text-gray-400">
+                      {{ t("admin.settings.security.passkeyRPIDHint") }}
+                    </p>
+                  </div>
+                  <div>
+                    <label class="input-label">{{
+                      t("admin.settings.security.passkeyOrigins")
+                    }}</label>
+                    <textarea
+                      v-model="passkeyRPOriginsText"
+                      data-testid="passkey-rp-origins-input"
+                      rows="3"
+                      class="input font-mono text-sm"
+                      placeholder="https://example.com"
+                      @input="passkeyConfigurationDirty = true"
+                    ></textarea>
+                    <p class="mt-1 text-xs text-gray-500 dark:text-gray-400">
+                      {{ t("admin.settings.security.passkeyOriginsHint") }}
+                    </p>
+                  </div>
                 </div>
               </div>
 
@@ -9135,6 +9185,7 @@ type SettingsForm = Omit<
   | "wechat_connect_mp_enabled"
   | "wechat_connect_mobile_enabled"
 > & {
+  totp_encryption_key: string;
   smtp_password: string;
   turnstile_secret_key: string;
   linuxdo_connect_client_secret: string;
@@ -9180,9 +9231,14 @@ const form = reactive<SettingsForm>({
   invitation_code_enabled: false,
   password_reset_enabled: false,
   totp_enabled: false,
+  totp_encryption_key: "",
   totp_encryption_key_configured: false,
+  totp_encryption_key_saved: false,
+  totp_restart_required: false,
   passkey_enabled: false,
   passkey_configured: false,
+  passkey_configuration_saved: false,
+  passkey_restart_required: false,
   passkey_rp_id: "",
   passkey_rp_origins: [],
   session_binding_enabled: false,
@@ -9445,6 +9501,25 @@ const form = reactive<SettingsForm>({
   // Allow user view error requests
   allow_user_view_error_requests: false,
 });
+
+const passkeyConfigurationDirty = ref(false);
+const passkeyRPOriginsText = computed({
+  get: () => form.passkey_rp_origins.join("\n"),
+  set: (value: string) => {
+    form.passkey_rp_origins = value
+      .split(/\r?\n/)
+      .map((origin) => origin.trim())
+      .filter(Boolean);
+  },
+});
+
+function generateTotpEncryptionKey() {
+  const bytes = new Uint8Array(32);
+  globalThis.crypto.getRandomValues(bytes);
+  form.totp_encryption_key = Array.from(bytes, (byte) =>
+    byte.toString(16).padStart(2, "0"),
+  ).join("");
+}
 
 type OpenAIAdvancedSchedulerOverrideKey =
   | "openai_advanced_scheduler_lb_top_k"
@@ -10456,6 +10531,8 @@ async function loadSettings() {
     );
     registrationEmailSuffixWhitelistDraft.value = "";
     form.smtp_password = "";
+    form.totp_encryption_key = "";
+    passkeyConfigurationDirty.value = false;
     smtpPasswordManuallyEdited.value = false;
     form.turnstile_secret_key = "";
     form.linuxdo_connect_client_secret = "";
@@ -10803,6 +10880,7 @@ async function saveSettings() {
       invitation_code_enabled: form.invitation_code_enabled,
       password_reset_enabled: form.password_reset_enabled,
       totp_enabled: form.totp_enabled,
+      totp_encryption_key: form.totp_encryption_key || undefined,
       passkey_enabled: form.passkey_enabled,
       session_binding_enabled: form.session_binding_enabled,
       step_up_enabled: form.step_up_enabled,
@@ -11127,6 +11205,10 @@ async function saveSettings() {
       };
     }
 
+    if (passkeyConfigurationDirty.value) {
+      payload.passkey_rp_id = form.passkey_rp_id.trim();
+      payload.passkey_rp_origins = [...form.passkey_rp_origins];
+    }
     payload.default_platform_quotas = sanitizePlatformQuotasMap(form.default_platform_quotas);
     appendAuthSourceDefaultsToUpdateRequest(payload, authSourceDefaults);
 
@@ -11156,6 +11238,8 @@ async function saveSettings() {
     );
     registrationEmailSuffixWhitelistDraft.value = "";
     form.smtp_password = "";
+    form.totp_encryption_key = "";
+    passkeyConfigurationDirty.value = false;
     smtpPasswordManuallyEdited.value = false;
     form.turnstile_secret_key = "";
     form.linuxdo_connect_client_secret = "";

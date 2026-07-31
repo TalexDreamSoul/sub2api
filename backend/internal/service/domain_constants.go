@@ -199,9 +199,12 @@ const (
 	SettingKeyForwardedClientIPHeaders  = "forwarded_client_ip_headers"    // 自定义 CDN 客户端 IP 请求头（JSON 数组）
 	settingKeyForwardedClientIPModeV2   = "forwarded_client_ip_mode_v2_migrated"
 
-	// TOTP 双因素认证设置
-	SettingKeyTotpEnabled    = "totp_enabled"    // 是否启用 TOTP 2FA 功能
-	SettingKeyPasskeyEnabled = "passkey_enabled" // 是否启用 Passkey 登录（仍要求有效的 WebAuthn 部署配置）
+	// TOTP and Passkey runtime security settings.
+	SettingKeyTotpEnabled       = "totp_enabled"
+	SettingKeyTotpEncryptionKey = "totp_encryption_key"
+	SettingKeyPasskeyEnabled    = "passkey_enabled"
+	SettingKeyWebAuthnRPID      = "webauthn_rp_id"
+	SettingKeyWebAuthnRPOrigins = "webauthn_rp_origins"
 
 	// 会话安全设置
 	SettingKeySessionBindingEnabled = "session_binding_enabled" // 会话 IP/UA 绑定（变更即失效），默认关闭

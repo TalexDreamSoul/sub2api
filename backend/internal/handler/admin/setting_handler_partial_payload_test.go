@@ -4,10 +4,14 @@ package admin
 
 import (
 	"net/http"
+	"strings"
 	"testing"
 
+	"github.com/Wei-Shaw/sub2api/internal/config"
+	servermiddleware "github.com/Wei-Shaw/sub2api/internal/server/middleware"
 	"github.com/Wei-Shaw/sub2api/internal/service"
 
+	"github.com/gin-gonic/gin"
 	"github.com/stretchr/testify/require"
 )
 
@@ -51,6 +55,112 @@ func TestUpdateSettingsFullPayloadStillClearsSentEmptyFields(t *testing.T) {
 
 	require.Equal(t, "", repo.values[service.SettingKeySiteName],
 		"an explicitly sent empty value is a deliberate clear, not an omission")
+}
+
+func prepareRuntimeSecuritySuperAdmin(c *gin.Context) {
+	c.Set(string(servermiddleware.ContextKeyAdminSuper), true)
+}
+
+func TestUpdateSettingsRuntimeSecurityConfigurationIsValidatedAndRedacted(t *testing.T) {
+	h, repo := newStepUpSwitchTestHandler(t, nil)
+	key := strings.Repeat("ab", 32)
+
+	rec := doUpdateSettings(t, h, map[string]any{
+		"totp_encryption_key": key,
+		"passkey_rp_id":       "router.example.com",
+		"passkey_rp_origins":  []string{"https://router.example.com"},
+	}, prepareRuntimeSecuritySuperAdmin)
+	require.Equal(t, http.StatusOK, rec.Code)
+	require.Equal(t, key, repo.values[service.SettingKeyTotpEncryptionKey])
+	require.Equal(t, "router.example.com", repo.values[service.SettingKeyWebAuthnRPID])
+	require.NotContains(t, rec.Body.String(), key, "write-only encryption key must never be returned")
+}
+
+func TestUpdateSettingsPersistsWebAuthnBoundaryAtomically(t *testing.T) {
+	repo := &settingHandlerRepoStub{values: map[string]string{}}
+	svc := service.NewSettingService(repo, &config.Config{
+		Default: config.DefaultConfig{UserConcurrency: 5},
+		WebAuthn: config.WebAuthnConfig{
+			Enabled:       true,
+			RPDisplayName: "Sub2API",
+			RPID:          "old.example.com",
+			RPOrigins:     []string{"https://old.example.com"},
+		},
+	})
+	h := NewSettingHandler(svc, nil, nil, nil, nil, nil, nil)
+
+	rec := doUpdateSettings(t, h, map[string]any{
+		"passkey_rp_origins": []string{"https://login.old.example.com"},
+	}, prepareRuntimeSecuritySuperAdmin)
+	require.Equal(t, http.StatusOK, rec.Code)
+	require.Equal(t, "old.example.com", repo.values[service.SettingKeyWebAuthnRPID])
+	require.JSONEq(t, `["https://login.old.example.com"]`, repo.values[service.SettingKeyWebAuthnRPOrigins])
+}
+
+func TestUpdateSettingsRejectsActiveWebAuthnRPIDChange(t *testing.T) {
+	repo := &settingHandlerRepoStub{values: map[string]string{}}
+	svc := service.NewSettingService(repo, &config.Config{
+		Default: config.DefaultConfig{UserConcurrency: 5},
+		WebAuthn: config.WebAuthnConfig{
+			Enabled:       true,
+			RPDisplayName: "Sub2API",
+			RPID:          "old.example.com",
+			RPOrigins:     []string{"https://old.example.com"},
+		},
+	})
+	h := NewSettingHandler(svc, nil, nil, nil, nil, nil, nil)
+
+	rec := doUpdateSettings(t, h, map[string]any{
+		"passkey_rp_id":      "new.example.com",
+		"passkey_rp_origins": []string{"https://new.example.com"},
+	}, prepareRuntimeSecuritySuperAdmin)
+	require.Equal(t, http.StatusBadRequest, rec.Code)
+	require.Empty(t, repo.values)
+}
+
+func TestUpdateSettingsRejectsActiveTotpKeyRotation(t *testing.T) {
+	activeKey := strings.Repeat("ab", 32)
+	repo := &settingHandlerRepoStub{values: map[string]string{}}
+	svc := service.NewSettingService(repo, &config.Config{
+		Default: config.DefaultConfig{UserConcurrency: 5},
+		Totp: config.TotpConfig{
+			EncryptionKey:           activeKey,
+			EncryptionKeyConfigured: true,
+		},
+	})
+	h := NewSettingHandler(svc, nil, nil, nil, nil, nil, nil)
+
+	rec := doUpdateSettings(t, h, map[string]any{
+		"totp_encryption_key": strings.Repeat("cd", 32),
+	}, prepareRuntimeSecuritySuperAdmin)
+	require.Equal(t, http.StatusBadRequest, rec.Code)
+	require.Empty(t, repo.values[service.SettingKeyTotpEncryptionKey])
+}
+
+func TestUpdateSettingsRejectsInvalidRuntimeSecurityConfiguration(t *testing.T) {
+	h, _ := newStepUpSwitchTestHandler(t, nil)
+
+	invalidKey := doUpdateSettings(t, h, map[string]any{
+		"totp_encryption_key": "not-a-key",
+	}, prepareRuntimeSecuritySuperAdmin)
+	require.Equal(t, http.StatusBadRequest, invalidKey.Code)
+
+	invalidOrigin := doUpdateSettings(t, h, map[string]any{
+		"passkey_rp_id":      "router.example.com",
+		"passkey_rp_origins": []string{"http://router.example.com"},
+	}, prepareRuntimeSecuritySuperAdmin)
+	require.Equal(t, http.StatusBadRequest, invalidOrigin.Code)
+}
+
+func TestUpdateSettingsRuntimeSecurityConfigurationRequiresSuperAdmin(t *testing.T) {
+	h, repo := newStepUpSwitchTestHandler(t, nil)
+
+	rec := doUpdateSettings(t, h, map[string]any{
+		"passkey_rp_id":      "router.example.com",
+		"passkey_rp_origins": []string{"https://router.example.com"},
+	}, nil)
+	require.Equal(t, http.StatusForbidden, rec.Code)
+	require.Empty(t, repo.values)
 }
 
 // smtp_from_email is the one request field whose JSON name differs from its

@@ -201,7 +201,16 @@ func (s *SettingService) buildSystemSettingsUpdates(ctx context.Context, setting
 	updates[SettingKeyFrontendURL] = settings.FrontendURL
 	updates[SettingKeyInvitationCodeEnabled] = strconv.FormatBool(settings.InvitationCodeEnabled)
 	updates[SettingKeyTotpEnabled] = strconv.FormatBool(settings.TotpEnabled)
+	if settings.TotpEncryptionKey != "" {
+		updates[SettingKeyTotpEncryptionKey] = strings.TrimSpace(settings.TotpEncryptionKey)
+	}
 	updates[SettingKeyPasskeyEnabled] = strconv.FormatBool(settings.PasskeyEnabled)
+	updates[SettingKeyWebAuthnRPID] = strings.ToLower(strings.TrimSpace(settings.PasskeyRPID))
+	passkeyOriginsJSON, err := json.Marshal(settings.PasskeyRPOrigins)
+	if err != nil {
+		return nil, fmt.Errorf("marshal WebAuthn RP origins: %w", err)
+	}
+	updates[SettingKeyWebAuthnRPOrigins] = string(passkeyOriginsJSON)
 	updates[SettingKeySessionBindingEnabled] = strconv.FormatBool(settings.SessionBindingEnabled)
 	updates[SettingKeyStepUpEnabled] = strconv.FormatBool(settings.StepUpEnabled)
 	updates[SettingKeyAuditLogRetentionDays] = strconv.Itoa(settings.AuditLogRetentionDays)

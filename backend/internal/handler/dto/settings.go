@@ -35,9 +35,13 @@ type SystemSettings struct {
 	FrontendURL                      string                   `json:"frontend_url"`
 	InvitationCodeEnabled            bool                     `json:"invitation_code_enabled"`
 	TotpEnabled                      bool                     `json:"totp_enabled"`                   // TOTP 双因素认证
-	TotpEncryptionKeyConfigured      bool                     `json:"totp_encryption_key_configured"` // TOTP 加密密钥是否已配置
+	TotpEncryptionKeyConfigured      bool                     `json:"totp_encryption_key_configured"` // 当前进程已加载固定密钥
+	TotpEncryptionKeySaved           bool                     `json:"totp_encryption_key_saved"`      // 数据库中已保存密钥
+	TotpRestartRequired              bool                     `json:"totp_restart_required"`
 	PasskeyEnabled                   bool                     `json:"passkey_enabled"`
-	PasskeyConfigured                bool                     `json:"passkey_configured"`
+	PasskeyConfigured                bool                     `json:"passkey_configured"` // 当前进程已加载有效 RP 配置
+	PasskeyConfigurationSaved        bool                     `json:"passkey_configuration_saved"`
+	PasskeyRestartRequired           bool                     `json:"passkey_restart_required"`
 	PasskeyRPID                      string                   `json:"passkey_rp_id"`
 	PasskeyRPOrigins                 []string                 `json:"passkey_rp_origins"`
 	SessionBindingEnabled            bool                     `json:"session_binding_enabled"`  // 会话 IP/UA 绑定

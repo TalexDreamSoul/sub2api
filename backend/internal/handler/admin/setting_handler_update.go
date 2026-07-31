@@ -2,6 +2,7 @@ package admin
 
 import (
 	"context"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"log/slog"
@@ -31,7 +32,10 @@ type UpdateSettingsRequest struct {
 	FrontendURL                      string                       `json:"frontend_url"`
 	InvitationCodeEnabled            bool                         `json:"invitation_code_enabled"`
 	TotpEnabled                      bool                         `json:"totp_enabled"`             // TOTP 双因素认证
+	TotpEncryptionKey                string                       `json:"totp_encryption_key"`      // 只写；空值表示不修改
 	PasskeyEnabled                   *bool                        `json:"passkey_enabled"`          // Passkey 登录（省略=保持现值）
+	PasskeyRPID                      string                       `json:"passkey_rp_id"`            // WebAuthn RP ID
+	PasskeyRPOrigins                 []string                     `json:"passkey_rp_origins"`       // WebAuthn allowed origins
 	SessionBindingEnabled            *bool                        `json:"session_binding_enabled"`  // 会话 IP/UA 绑定（省略=保持现值）
 	StepUpEnabled                    *bool                        `json:"step_up_enabled"`          // 敏感操作 step-up 2FA（省略=保持现值）
 	AuditLogRetentionDays            int                          `json:"audit_log_retention_days"` // 审计日志保留天数
@@ -498,10 +502,25 @@ func hasFeishuNotificationSettingFields(fields map[string]json.RawMessage) bool 
 	return false
 }
 
+func hasRuntimeSecuritySettingFields(fields map[string]json.RawMessage) bool {
+	for _, key := range []string{"totp_encryption_key", "passkey_rp_id", "passkey_rp_origins"} {
+		if _, ok := fields[key]; ok {
+			return true
+		}
+	}
+	return false
+}
+
 func (h *SettingHandler) UpdateSettings(c *gin.Context) {
 	var sentFields map[string]json.RawMessage
 	if err := c.ShouldBindBodyWith(&sentFields, binding.JSON); err != nil {
 		response.BadRequest(c, "Invalid request: "+err.Error())
+		return
+	}
+	if hasRuntimeSecuritySettingFields(sentFields) && !middleware.IsSuperAdminContext(c) {
+		response.ErrorWithDetails(c, http.StatusForbidden,
+			"Runtime TOTP and Passkey configuration requires super administrator access",
+			"SUPER_ADMIN_REQUIRED", nil)
 		return
 	}
 	if hasFeishuNotificationSettingFields(sentFields) && !middleware.EnforceStepUpAlways(c, h.totpService, h.userService) {
@@ -538,6 +557,57 @@ func (h *SettingHandler) UpdateSettings(c *gin.Context) {
 	passkeyEnabled := previousSettings.PasskeyEnabled
 	if req.PasskeyEnabled != nil {
 		passkeyEnabled = *req.PasskeyEnabled
+	}
+
+	totpEncryptionKey := strings.TrimSpace(req.TotpEncryptionKey)
+	if totpEncryptionKey != "" {
+		decoded, err := hex.DecodeString(totpEncryptionKey)
+		if err != nil || len(decoded) != 32 {
+			response.BadRequest(c, "TOTP encryption key must be exactly 64 hexadecimal characters")
+			return
+		}
+		if h.settingService.IsTotpEncryptionKeyConfigured() &&
+			!h.settingService.IsCurrentTotpEncryptionKey(totpEncryptionKey) {
+			response.BadRequest(c, "Rotating the active TOTP encryption key is not supported because existing encrypted data would become unreadable")
+			return
+		}
+		totpEncryptionKey = strings.ToLower(totpEncryptionKey)
+	}
+
+	passkeyRPID := previousSettings.PasskeyRPID
+	if _, sent := sentFields["passkey_rp_id"]; sent {
+		passkeyRPID = req.PasskeyRPID
+	}
+	passkeyRPOrigins := append([]string(nil), previousSettings.PasskeyRPOrigins...)
+	if _, sent := sentFields["passkey_rp_origins"]; sent {
+		passkeyRPOrigins = append([]string(nil), req.PasskeyRPOrigins...)
+	}
+	_, passkeyRPIDSent := sentFields["passkey_rp_id"]
+	_, passkeyOriginsSent := sentFields["passkey_rp_origins"]
+	if passkeyRPIDSent || passkeyOriginsSent {
+		displayName := strings.TrimSpace(previousSettings.SiteName)
+		if displayName == "" {
+			displayName = "Sub2API"
+		}
+		candidate := config.WebAuthnConfig{
+			Enabled:       true,
+			RPDisplayName: displayName,
+			RPID:          passkeyRPID,
+			RPOrigins:     passkeyRPOrigins,
+		}
+		if err := config.NormalizeAndValidateWebAuthnConfig(&candidate); err != nil {
+			response.BadRequest(c, err.Error())
+			return
+		}
+		if configured, activeRPID, _ := h.settingService.PasskeyConfiguration(); configured && !strings.EqualFold(candidate.RPID, activeRPID) {
+			response.BadRequest(c, "Changing an active WebAuthn RP ID is not supported because existing Passkey credentials would stop working")
+			return
+		}
+		passkeyRPID = candidate.RPID
+		passkeyRPOrigins = candidate.RPOrigins
+		// RP ID and origins form one security boundary and must be persisted atomically.
+		delete(omitted, service.SettingKeyWebAuthnRPID)
+		delete(omitted, service.SettingKeyWebAuthnRPOrigins)
 	}
 	if passkeyEnabled {
 		configured, _, _ := h.settingService.PasskeyConfiguration()
@@ -678,11 +748,10 @@ func (h *SettingHandler) UpdateSettings(c *gin.Context) {
 	}
 
 	// TOTP 双因素认证参数验证
-	// 只有手动配置了加密密钥才允许启用 TOTP 功能
+	// 新启用 TOTP 前，固定密钥必须已经在当前进程生效。
 	if req.TotpEnabled && !previousSettings.TotpEnabled {
-		// 尝试启用 TOTP，检查加密密钥是否已手动配置
 		if !h.settingService.IsTotpEncryptionKeyConfigured() {
-			response.BadRequest(c, "Cannot enable TOTP: TOTP_ENCRYPTION_KEY environment variable must be configured first. Generate a key with 'openssl rand -hex 32' and set it in your environment.")
+			response.BadRequest(c, "Cannot enable TOTP until a fixed encryption key is active. Save a 64-character hexadecimal key in Security settings, restart the service, then enable TOTP.")
 			return
 		}
 	}
@@ -1504,7 +1573,10 @@ func (h *SettingHandler) UpdateSettings(c *gin.Context) {
 		FrontendURL:                      req.FrontendURL,
 		InvitationCodeEnabled:            req.InvitationCodeEnabled,
 		TotpEnabled:                      req.TotpEnabled,
+		TotpEncryptionKey:                totpEncryptionKey,
 		PasskeyEnabled:                   passkeyEnabled,
+		PasskeyRPID:                      passkeyRPID,
+		PasskeyRPOrigins:                 passkeyRPOrigins,
 		SessionBindingEnabled:            sessionBindingEnabled,
 		StepUpEnabled:                    stepUpEnabled,
 		AuditLogRetentionDays:            req.AuditLogRetentionDays,
@@ -2077,7 +2149,7 @@ func (h *SettingHandler) UpdateSettings(c *gin.Context) {
 	if updatedPaymentCfg == nil {
 		updatedPaymentCfg = &service.PaymentConfig{}
 	}
-	passkeyConfigured, passkeyRPID, passkeyRPOrigins := h.settingService.PasskeyConfiguration()
+	passkeyConfigured, _, _ := h.settingService.PasskeyConfiguration()
 
 	payload := dto.SystemSettings{
 		RegistrationEnabled:                                    updatedSettings.RegistrationEnabled,
@@ -2089,10 +2161,14 @@ func (h *SettingHandler) UpdateSettings(c *gin.Context) {
 		InvitationCodeEnabled:                                  updatedSettings.InvitationCodeEnabled,
 		TotpEnabled:                                            updatedSettings.TotpEnabled,
 		TotpEncryptionKeyConfigured:                            h.settingService.IsTotpEncryptionKeyConfigured(),
+		TotpEncryptionKeySaved:                                 updatedSettings.TotpEncryptionKeySaved,
+		TotpRestartRequired:                                    updatedSettings.TotpRestartRequired,
 		PasskeyEnabled:                                         updatedSettings.PasskeyEnabled,
 		PasskeyConfigured:                                      passkeyConfigured,
-		PasskeyRPID:                                            passkeyRPID,
-		PasskeyRPOrigins:                                       passkeyRPOrigins,
+		PasskeyConfigurationSaved:                              updatedSettings.PasskeyConfigurationSaved,
+		PasskeyRestartRequired:                                 updatedSettings.PasskeyRestartRequired,
+		PasskeyRPID:                                            updatedSettings.PasskeyRPID,
+		PasskeyRPOrigins:                                       updatedSettings.PasskeyRPOrigins,
 		SessionBindingEnabled:                                  updatedSettings.SessionBindingEnabled,
 		StepUpEnabled:                                          updatedSettings.StepUpEnabled,
 		AuditLogRetentionDays:                                  updatedSettings.AuditLogRetentionDays,

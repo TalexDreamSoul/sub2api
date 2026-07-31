@@ -1695,7 +1695,11 @@
                     {{ t("admin.settings.security.stepUpHint") }}
                   </p>
                 </div>
-                <Toggle v-model="form.step_up_enabled" />
+                <Toggle
+                  v-model="form.step_up_enabled"
+                  data-testid="step-up-toggle"
+                  @update:model-value="stepUpEnabledDirty = true"
+                />
               </div>
 
               <!-- 会话 IP/UA 绑定 -->
@@ -9502,6 +9506,7 @@ const form = reactive<SettingsForm>({
 });
 
 const passkeyConfigurationDirty = ref(false);
+const stepUpEnabledDirty = ref(false);
 const passkeyRPOriginsText = computed({
   get: () => form.passkey_rp_origins.join("\n"),
   set: (value: string) => {
@@ -10532,6 +10537,7 @@ async function loadSettings() {
     form.smtp_password = "";
     form.totp_encryption_key = "";
     passkeyConfigurationDirty.value = false;
+    stepUpEnabledDirty.value = false;
     smtpPasswordManuallyEdited.value = false;
     form.turnstile_secret_key = "";
     form.linuxdo_connect_client_secret = "";
@@ -10882,7 +10888,6 @@ async function saveSettings() {
       totp_encryption_key: form.totp_encryption_key || undefined,
       passkey_enabled: form.passkey_enabled,
       session_binding_enabled: form.session_binding_enabled,
-      step_up_enabled: form.step_up_enabled,
       // 清空数字框时 v-model.number 会得到空串，后端 int 字段解析空串会 400 拒绝整次保存；
       // 空/非法值回退默认 180（与后端 parseAuditLogRetentionDays("") 语义一致，0 仍表示永久保留）。
       audit_log_retention_days: Number.isFinite(form.audit_log_retention_days)
@@ -11204,6 +11209,9 @@ async function saveSettings() {
       };
     }
 
+    if (stepUpEnabledDirty.value) {
+      payload.step_up_enabled = form.step_up_enabled;
+    }
     if (passkeyConfigurationDirty.value) {
       payload.passkey_rp_id = form.passkey_rp_id.trim();
       payload.passkey_rp_origins = [...form.passkey_rp_origins];
@@ -11239,6 +11247,7 @@ async function saveSettings() {
     form.smtp_password = "";
     form.totp_encryption_key = "";
     passkeyConfigurationDirty.value = false;
+    stepUpEnabledDirty.value = false;
     smtpPasswordManuallyEdited.value = false;
     form.turnstile_secret_key = "";
     form.linuxdo_connect_client_secret = "";

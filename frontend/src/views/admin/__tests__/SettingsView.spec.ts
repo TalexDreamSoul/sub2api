@@ -835,6 +835,8 @@ describe("admin SettingsView payment visible method controls", () => {
     await wrapper.find("form").trigger("submit.prevent");
     await flushPromises();
 
+    const payload = updateSettings.mock.calls[0]?.[0];
+    expect(payload).not.toHaveProperty("step_up_enabled");
     expect(updateSettings).toHaveBeenCalledWith(
       expect.objectContaining({
         totp_enabled: true,
@@ -847,6 +849,21 @@ describe("admin SettingsView payment visible method controls", () => {
           "https://admin.router.example.com",
         ],
       }),
+    );
+  });
+
+  it("submits step-up only after the switch is explicitly changed", async () => {
+    const wrapper = mountView();
+
+    await flushPromises();
+    await openSecurityTab(wrapper);
+
+    await wrapper.get('[data-testid="step-up-toggle"]').setValue(true);
+    await wrapper.find("form").trigger("submit.prevent");
+    await flushPromises();
+
+    expect(updateSettings).toHaveBeenCalledWith(
+      expect.objectContaining({ step_up_enabled: true }),
     );
   });
 

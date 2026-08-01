@@ -92,8 +92,8 @@ func TestUpdateSettingsDisableStepUpRequiresStepUp(t *testing.T) {
 	require.Equal(t, "true", repo.values[service.SettingKeyStepUpEnabled])
 }
 
-// 关闭开关：admin API key 被 step-up 门控以 403 拦截。
-func TestUpdateSettingsDisableStepUpRejectsAdminAPIKey(t *testing.T) {
+// 关闭开关：管理员系统密钥作为部署级凭证可直接执行。
+func TestUpdateSettingsDisableStepUpAllowsAdminAPIKey(t *testing.T) {
 	h, repo := newStepUpSwitchTestHandler(t, map[string]string{
 		service.SettingKeyStepUpEnabled: "true",
 	})
@@ -102,9 +102,8 @@ func TestUpdateSettingsDisableStepUpRejectsAdminAPIKey(t *testing.T) {
 		c.Set("auth_method", service.AuditAuthMethodAdminAPIKey)
 	})
 
-	require.Equal(t, http.StatusForbidden, rec.Code)
-	require.Contains(t, rec.Body.String(), "STEP_UP_ADMIN_API_KEY_FORBIDDEN")
-	require.Equal(t, "true", repo.values[service.SettingKeyStepUpEnabled])
+	require.Equal(t, http.StatusOK, rec.Code)
+	require.Equal(t, "false", repo.values[service.SettingKeyStepUpEnabled])
 }
 
 // 无状态转换（false→false）：不触发任何转换校验，常规保存成功且默认持久化为 false。

@@ -31,6 +31,18 @@ func (s stubStepUpUserReader) GetByID(ctx context.Context, id int64) (*service.U
 	return s.user, s.err
 }
 
+type panicStepUpGrantChecker struct{}
+
+func (panicStepUpGrantChecker) HasStepUpGrant(context.Context, int64, string) (bool, error) {
+	panic("step-up grant must not be checked for an admin API key")
+}
+
+type panicStepUpUserReader struct{}
+
+func (panicStepUpUserReader) GetByID(context.Context, int64) (*service.User, error) {
+	panic("user TOTP status must not be checked for an admin API key")
+}
+
 type stubStepUpSettingReader struct {
 	enabled bool
 }
@@ -51,16 +63,31 @@ func newStepUpTestContext(t *testing.T) (*gin.Context, *httptest.ResponseRecorde
 	return c, rec
 }
 
-func TestEnforceStepUpRejectsAdminAPIKey(t *testing.T) {
-	c, rec := newStepUpTestContext(t)
-	c.Set("auth_method", service.AuditAuthMethodAdminAPIKey)
+func TestEnforceStepUpPassesAdminAPIKeyWithoutTotpOrGrantChecks(t *testing.T) {
+	tests := []struct {
+		name     string
+		settings stepUpSettingReader
+		force    bool
+	}{
+		{name: "enabled", settings: stepUpEnabled},
+		{name: "forced", settings: stubStepUpSettingReader{enabled: false}, force: true},
+	}
 
-	ok := enforceStepUp(c, stubStepUpGrantChecker{granted: true}, stubStepUpUserReader{user: &service.User{TotpEnabled: true}}, stepUpEnabled)
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			c, rec := newStepUpTestContext(t)
+			c.Set("auth_method", service.AuditAuthMethodAdminAPIKey)
+			if tt.force {
+				c.Set(contextKeyStepUpRequired, true)
+			}
 
-	require.False(t, ok)
-	require.True(t, c.IsAborted())
-	require.Equal(t, http.StatusForbidden, rec.Code)
-	require.Contains(t, rec.Body.String(), "STEP_UP_ADMIN_API_KEY_FORBIDDEN")
+			ok := enforceStepUp(c, panicStepUpGrantChecker{}, panicStepUpUserReader{}, tt.settings)
+
+			require.True(t, ok)
+			require.False(t, c.IsAborted())
+			require.Less(t, rec.Code, http.StatusBadRequest)
+		})
+	}
 }
 
 func TestEnforceStepUpRequiresAuthSubject(t *testing.T) {

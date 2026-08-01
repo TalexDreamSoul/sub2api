@@ -41,11 +41,11 @@ func StepUpSessionKey(c *gin.Context, userID int64) string {
 // NewStepUpAuthMiddleware 创建敏感操作 step-up 2FA 门控中间件。
 //
 // 功能开关 step_up_enabled（默认关闭）关闭时中间件直接放行，行为与门控引入前一致。
-// 开启时的通过条件（全部满足）：
-//  1. 必须是 JWT 认证的真人会话——admin API key（机器凭证）一律拒绝
-//  2. 当前用户已启用 TOTP（未启用则拒绝并提示先启用 2FA）
-//  3. 当前会话在有效期内完成过 TOTP step-up 验证（POST /api/v1/user/totp/step-up）
-//
+// 开启时的通过条件：
+//  1. 管理员系统密钥作为部署级凭证可直接通过
+//  2. JWT 真人会话必须已启用 TOTP（未启用则拒绝并提示先启用 2FA）
+//  3. JWT 真人会话必须在有效期内完成过 TOTP step-up 验证（POST /api/v1/user/totp/step-up）
+
 // 失败响应使用可区分的错误码，前端据此弹出 TOTP 验证对话框后重试。
 func NewStepUpAuthMiddleware(
 	totpService *service.TotpService,
@@ -113,9 +113,7 @@ func enforceStepUp(c *gin.Context, grantChecker stepUpGrantChecker, userReader s
 	}
 
 	if c.GetString("auth_method") == service.AuditAuthMethodAdminAPIKey {
-		AbortWithError(c, 403, "STEP_UP_ADMIN_API_KEY_FORBIDDEN",
-			"Admin API key cannot access this endpoint; a two-factor verified admin session is required")
-		return false
+		return true
 	}
 
 	subject, ok := GetAuthSubjectFromContext(c)

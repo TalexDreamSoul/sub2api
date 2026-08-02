@@ -502,6 +502,53 @@ func hasFeishuNotificationSettingFields(fields map[string]json.RawMessage) bool 
 	return false
 }
 
+func feishuNotificationSettingsChanged(fields map[string]json.RawMessage, req UpdateSettingsRequest, previous *service.SystemSettings) bool {
+	if previous == nil {
+		return hasFeishuNotificationSettingFields(fields)
+	}
+	for key := range fields {
+		switch key {
+		case "feishu_notify_enabled":
+			if req.FeishuNotifyEnabled != previous.FeishuNotifyEnabled {
+				return true
+			}
+		case "feishu_notify_app_id":
+			if req.FeishuNotifyAppID != previous.FeishuNotifyAppID {
+				return true
+			}
+		case "feishu_notify_app_secret":
+			if req.FeishuNotifyAppSecret != previous.FeishuNotifyAppSecret {
+				return true
+			}
+		case "feishu_notify_token_url":
+			if req.FeishuNotifyTokenURL != previous.FeishuNotifyTokenURL {
+				return true
+			}
+		case "feishu_notify_message_url":
+			if req.FeishuNotifyMessageURL != previous.FeishuNotifyMessageURL {
+				return true
+			}
+		case "feishu_notify_panel_url":
+			if req.FeishuNotifyPanelURL != previous.FeishuNotifyPanelURL {
+				return true
+			}
+		case "feishu_notify_verification_token":
+			if req.FeishuNotifyVerificationToken != previous.FeishuNotifyVerificationToken {
+				return true
+			}
+		case "feishu_notify_encrypt_key":
+			if req.FeishuNotifyEncryptKey != previous.FeishuNotifyEncryptKey {
+				return true
+			}
+		default:
+			if strings.HasPrefix(key, "feishu_notify_") {
+				return true
+			}
+		}
+	}
+	return false
+}
+
 func hasRuntimeSecuritySettingFields(fields map[string]json.RawMessage) bool {
 	for _, key := range []string{"totp_encryption_key", "passkey_rp_id", "passkey_rp_origins"} {
 		if _, ok := fields[key]; ok {
@@ -521,9 +568,6 @@ func (h *SettingHandler) UpdateSettings(c *gin.Context) {
 		response.ErrorWithDetails(c, http.StatusForbidden,
 			"Runtime TOTP and Passkey configuration requires super administrator access",
 			"SUPER_ADMIN_REQUIRED", nil)
-		return
-	}
-	if hasFeishuNotificationSettingFields(sentFields) && !middleware.EnforceStepUpAlways(c, h.totpService, h.userService) {
 		return
 	}
 	var req UpdateSettingsRequest
@@ -1027,6 +1071,11 @@ func (h *SettingHandler) UpdateSettings(c *gin.Context) {
 			response.BadRequest(c, "Feishu notification Panel URL is invalid or insecure")
 			return
 		}
+	}
+
+	if feishuNotificationSettingsChanged(sentFields, req, previousSettings) &&
+		!middleware.EnforceStepUpAlways(c, h.totpService, h.userService) {
+		return
 	}
 
 	if req.WeChatConnectEnabled {

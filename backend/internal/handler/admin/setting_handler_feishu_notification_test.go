@@ -12,6 +12,7 @@ import (
 
 	"github.com/Wei-Shaw/sub2api/internal/config"
 	"github.com/Wei-Shaw/sub2api/internal/pkg/response"
+	servermiddleware "github.com/Wei-Shaw/sub2api/internal/server/middleware"
 	"github.com/Wei-Shaw/sub2api/internal/service"
 	"github.com/gin-gonic/gin"
 	"github.com/stretchr/testify/require"
@@ -154,4 +155,117 @@ func TestSettingHandler_TestFeishuNotificationRequiresStepUp(t *testing.T) {
 
 	require.Equal(t, http.StatusUnauthorized, rec.Code)
 	require.False(t, messageCalled.Load())
+}
+
+func TestSettingHandler_UpdateSettings_TotpWithUnchangedFeishuPayloadSkipsStepUp(t *testing.T) {
+	const (
+		appID      = "cli-stable"
+		tokenURL   = "https://open.feishu.cn/open-apis/auth/v3/tenant_access_token/internal"
+		messageURL = "https://open.feishu.cn/open-apis/im/v1/messages"
+		panelURL   = "/feishu/panel"
+	)
+	totpEncryptionKey := strings.Repeat("ab", 32)
+
+	for _, tc := range []struct {
+		name          string
+		includeSecret bool
+	}{
+		{name: "empty secret", includeSecret: true},
+		{name: "omitted secret"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			repo := &settingHandlerRepoStub{values: map[string]string{
+				service.SettingKeyTotpEnabled:            "false",
+				service.SettingKeyFeishuNotifyEnabled:    "true",
+				service.SettingKeyFeishuNotifyAppID:      appID,
+				service.SettingKeyFeishuNotifyAppSecret:  "stored-secret",
+				service.SettingKeyFeishuNotifyTokenURL:   tokenURL,
+				service.SettingKeyFeishuNotifyMessageURL: messageURL,
+				service.SettingKeyFeishuNotifyPanelURL:   panelURL,
+			}}
+			svc := service.NewSettingService(repo, &config.Config{Default: config.DefaultConfig{UserConcurrency: 5}})
+			handler := NewSettingHandler(svc, nil, nil, nil, nil, nil, nil)
+
+			body := map[string]any{
+				"totp_enabled":              true,
+				"totp_encryption_key":       totpEncryptionKey,
+				"feishu_notify_enabled":     true,
+				"feishu_notify_app_id":      appID,
+				"feishu_notify_token_url":   tokenURL,
+				"feishu_notify_message_url": messageURL,
+				"feishu_notify_panel_url":   panelURL,
+			}
+			if tc.includeSecret {
+				body["feishu_notify_app_secret"] = ""
+			}
+
+			rec := doUpdateSettings(t, handler, body, func(c *gin.Context) {
+				c.Set(string(servermiddleware.ContextKeyAdminSuper), true)
+			})
+
+			require.Equal(t, http.StatusOK, rec.Code)
+			require.Equal(t, "true", repo.values[service.SettingKeyTotpEnabled])
+			require.Equal(t, totpEncryptionKey, repo.values[service.SettingKeyTotpEncryptionKey])
+		})
+	}
+}
+
+func TestSettingHandler_UpdateSettings_TotpWithChangedFeishuPayloadRequiresStepUp(t *testing.T) {
+	const (
+		appID      = "cli-stable"
+		tokenURL   = "https://open.feishu.cn/open-apis/auth/v3/tenant_access_token/internal"
+		messageURL = "https://open.feishu.cn/open-apis/im/v1/messages"
+		panelURL   = "/feishu/panel"
+	)
+	totpEncryptionKey := strings.Repeat("cd", 32)
+
+	for _, tc := range []struct {
+		name  string
+		field string
+		value any
+	}{
+		{name: "enabled", field: "feishu_notify_enabled", value: false},
+		{name: "app ID", field: "feishu_notify_app_id", value: "cli-changed"},
+		{name: "token URL", field: "feishu_notify_token_url", value: "https://open.feishu.cn/open-apis/auth/v3/app_access_token/internal"},
+		{name: "message URL", field: "feishu_notify_message_url", value: "https://open.feishu.cn/open-apis/im/v1/messages/batch"},
+		{name: "panel URL", field: "feishu_notify_panel_url", value: "/feishu/updated-panel"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			repo := &settingHandlerRepoStub{values: map[string]string{
+				service.SettingKeyTotpEnabled:            "false",
+				service.SettingKeyFeishuNotifyEnabled:    "true",
+				service.SettingKeyFeishuNotifyAppID:      appID,
+				service.SettingKeyFeishuNotifyAppSecret:  "stored-secret",
+				service.SettingKeyFeishuNotifyTokenURL:   tokenURL,
+				service.SettingKeyFeishuNotifyMessageURL: messageURL,
+				service.SettingKeyFeishuNotifyPanelURL:   panelURL,
+			}}
+			svc := service.NewSettingService(repo, &config.Config{Default: config.DefaultConfig{UserConcurrency: 5}})
+			handler := NewSettingHandler(svc, nil, nil, nil, nil, nil, nil)
+			body := map[string]any{
+				"totp_enabled":              true,
+				"totp_encryption_key":       totpEncryptionKey,
+				"feishu_notify_enabled":     true,
+				"feishu_notify_app_id":      appID,
+				"feishu_notify_token_url":   tokenURL,
+				"feishu_notify_message_url": messageURL,
+				"feishu_notify_panel_url":   panelURL,
+			}
+			body[tc.field] = tc.value
+
+			rec := doUpdateSettings(t, handler, body, func(c *gin.Context) {
+				c.Set(string(servermiddleware.ContextKeyAdminSuper), true)
+			})
+
+			require.Equal(t, http.StatusUnauthorized, rec.Code)
+			require.Equal(t, "false", repo.values[service.SettingKeyTotpEnabled])
+			_, saved := repo.values[service.SettingKeyTotpEncryptionKey]
+			require.False(t, saved)
+			require.Equal(t, "true", repo.values[service.SettingKeyFeishuNotifyEnabled])
+			require.Equal(t, appID, repo.values[service.SettingKeyFeishuNotifyAppID])
+			require.Equal(t, tokenURL, repo.values[service.SettingKeyFeishuNotifyTokenURL])
+			require.Equal(t, messageURL, repo.values[service.SettingKeyFeishuNotifyMessageURL])
+			require.Equal(t, panelURL, repo.values[service.SettingKeyFeishuNotifyPanelURL])
+		})
+	}
 }

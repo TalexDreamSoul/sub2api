@@ -3,11 +3,13 @@
 package admin
 
 import (
+	"encoding/json"
 	"net/http"
 	"strings"
 	"testing"
 
 	"github.com/Wei-Shaw/sub2api/internal/config"
+	"github.com/Wei-Shaw/sub2api/internal/repository"
 	servermiddleware "github.com/Wei-Shaw/sub2api/internal/server/middleware"
 	"github.com/Wei-Shaw/sub2api/internal/service"
 
@@ -62,8 +64,16 @@ func prepareRuntimeSecuritySuperAdmin(c *gin.Context) {
 }
 
 func TestUpdateSettingsRuntimeSecurityConfigurationIsValidatedAndRedacted(t *testing.T) {
-	h, repo := newStepUpSwitchTestHandler(t, nil)
 	key := strings.Repeat("ab", 32)
+	cfg := &config.Config{
+		Default: config.DefaultConfig{UserConcurrency: 5},
+		Totp:    config.TotpConfig{EncryptionKey: strings.Repeat("01", 32)},
+	}
+	repo := &settingHandlerRepoStub{values: map[string]string{}}
+	svc := service.NewSettingService(repo, cfg)
+	h := NewSettingHandler(svc, nil, nil, nil, nil, nil, nil)
+	totpService, _ := newRuntimeActivatableTotpService(t, cfg, svc)
+	h.SetStepUpDeps(totpService, nil)
 
 	rec := doUpdateSettings(t, h, map[string]any{
 		"totp_enabled":        true,
@@ -78,6 +88,50 @@ func TestUpdateSettingsRuntimeSecurityConfigurationIsValidatedAndRedacted(t *tes
 	require.Equal(t, key, repo.values[service.SettingKeyTotpEncryptionKey])
 	require.Equal(t, "router.example.com", repo.values[service.SettingKeyWebAuthnRPID])
 	require.NotContains(t, rec.Body.String(), key, "write-only encryption key must never be returned")
+}
+
+func TestUpdateSettingsFirstTotpKeyActivatesRuntimeEncryptor(t *testing.T) {
+	oldRuntimeKey := strings.Repeat("01", 32)
+	newFixedKey := strings.Repeat("ab", 32)
+	cfg := &config.Config{
+		Default: config.DefaultConfig{UserConcurrency: 5},
+		Totp:    config.TotpConfig{EncryptionKey: oldRuntimeKey},
+	}
+	repo := &settingHandlerRepoStub{values: map[string]string{}}
+	svc := service.NewSettingService(repo, cfg)
+	runtimeTotpService, runtimeEncryptor := newRuntimeActivatableTotpService(t, cfg, svc)
+	h := NewSettingHandler(svc, nil, nil, nil, nil, nil, nil)
+	h.SetStepUpDeps(runtimeTotpService, nil)
+
+	rec := doUpdateSettings(t, h, map[string]any{
+		"totp_enabled":        true,
+		"totp_encryption_key": newFixedKey,
+	}, prepareRuntimeSecuritySuperAdmin)
+	require.Equal(t, http.StatusOK, rec.Code)
+	require.Equal(t, newFixedKey, repo.values[service.SettingKeyTotpEncryptionKey])
+
+	var response struct {
+		Data struct {
+			Configured      bool `json:"totp_encryption_key_configured"`
+			RestartRequired bool `json:"totp_restart_required"`
+		} `json:"data"`
+	}
+	require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &response))
+	require.True(t, response.Data.Configured)
+	require.False(t, response.Data.RestartRequired)
+
+	ciphertext, err := runtimeEncryptor.Encrypt("subsequent TOTP secret")
+	require.NoError(t, err)
+	plaintext, err := runtimeEncryptor.Decrypt(ciphertext)
+	require.NoError(t, err)
+	require.Equal(t, "subsequent TOTP secret", plaintext)
+
+	oldEncryptor, err := repository.NewAESEncryptor(&config.Config{
+		Totp: config.TotpConfig{EncryptionKey: oldRuntimeKey},
+	})
+	require.NoError(t, err)
+	_, err = oldEncryptor.Decrypt(ciphertext)
+	require.Error(t, err, "the pre-activation runtime key must not decrypt newly persisted TOTP secrets")
 }
 
 func TestUpdateSettingsPersistsWebAuthnBoundaryAtomically(t *testing.T) {

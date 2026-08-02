@@ -10,6 +10,7 @@ import (
 	"testing"
 
 	"github.com/Wei-Shaw/sub2api/internal/config"
+	"github.com/Wei-Shaw/sub2api/internal/repository"
 	"github.com/Wei-Shaw/sub2api/internal/server/middleware"
 	"github.com/Wei-Shaw/sub2api/internal/service"
 
@@ -77,6 +78,13 @@ func doUpdateSettings(t *testing.T, h *SettingHandler, body map[string]any, prep
 
 	h.UpdateSettings(c)
 	return rec
+}
+
+func newRuntimeActivatableTotpService(t *testing.T, cfg *config.Config, settingService *service.SettingService) (*service.TotpService, service.SecretEncryptor) {
+	t.Helper()
+	encryptor, err := repository.NewAESEncryptor(cfg)
+	require.NoError(t, err)
+	return service.NewTotpService(nil, encryptor, nil, settingService, nil, nil), encryptor
 }
 
 // 首次配置时系统 TOTP 尚未在运行时可用：先返回明确前置条件错误，且不保存开关。

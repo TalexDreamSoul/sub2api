@@ -5,7 +5,9 @@ package repository
 import (
 	"encoding/base64"
 	"encoding/hex"
+	"fmt"
 	"strings"
+	"sync"
 	"testing"
 
 	"github.com/Wei-Shaw/sub2api/internal/config"
@@ -216,4 +218,114 @@ func TestAESEncryptor_CrossInstance_DifferentKey_CannotDecrypt(t *testing.T) {
 
 	_, err = enc2.Decrypt(ct)
 	require.Error(t, err, "不同密钥的实例不应能解密对方的密文")
+}
+
+func TestAESEncryptor_ActivateKeySwitchesActiveCipher(t *testing.T) {
+	enc := aesEncryptor(t)
+	oldCiphertext, err := enc.Encrypt("secret encrypted before activation")
+	require.NoError(t, err)
+
+	newKey := aesHexKey(32, 0x7B)
+	require.NoError(t, enc.ActivateKey(newKey))
+
+	newCiphertext, err := enc.Encrypt("secret encrypted after activation")
+	require.NoError(t, err)
+	plaintext, err := enc.Decrypt(newCiphertext)
+	require.NoError(t, err)
+	require.Equal(t, "secret encrypted after activation", plaintext)
+
+	_, err = enc.Decrypt(oldCiphertext)
+	require.Error(t, err, "the activated key must not decrypt ciphertext produced by the old key")
+
+	oldEncryptor, err := NewAESEncryptor(aesTestCfg(aesHexKey(32, 0x42)))
+	require.NoError(t, err)
+	plaintext, err = oldEncryptor.Decrypt(oldCiphertext)
+	require.NoError(t, err)
+	require.Equal(t, "secret encrypted before activation", plaintext)
+	_, err = oldEncryptor.Decrypt(newCiphertext)
+	require.Error(t, err, "the old key must not decrypt ciphertext produced after activation")
+}
+
+func TestAESEncryptor_ActivateKeyRejectsInvalidKeyWithoutChangingActiveCipher(t *testing.T) {
+	enc := aesEncryptor(t)
+	require.Error(t, enc.ActivateKey("not-a-64-character-hex-aes-key"))
+
+	ciphertext, err := enc.Encrypt("must remain encrypted with the original key")
+	require.NoError(t, err)
+
+	originalKeyEncryptor, err := NewAESEncryptor(aesTestCfg(aesHexKey(32, 0x42)))
+	require.NoError(t, err)
+	plaintext, err := originalKeyEncryptor.Decrypt(ciphertext)
+	require.NoError(t, err)
+	require.Equal(t, "must remain encrypted with the original key", plaintext)
+}
+
+func TestAESEncryptor_ConcurrentActivationAndCryptoOperations(t *testing.T) {
+	enc := aesEncryptor(t)
+	keyA := aesHexKey(32, 0x42)
+	keyB := aesHexKey(32, 0x7B)
+	ciphertextA, err := enc.Encrypt("encrypted with key A")
+	require.NoError(t, err)
+	keyBEncryptor, err := NewAESEncryptor(aesTestCfg(keyB))
+	require.NoError(t, err)
+	ciphertextB, err := keyBEncryptor.Encrypt("encrypted with key B")
+	require.NoError(t, err)
+
+	const iterations = 300
+	errs := make(chan error, 4*iterations)
+	start := make(chan struct{})
+	var wg sync.WaitGroup
+
+	wg.Add(1)
+	go func() {
+		defer wg.Done()
+		<-start
+		for i := range iterations {
+			key := keyA
+			if i%2 == 1 {
+				key = keyB
+			}
+			if err := enc.ActivateKey(key); err != nil {
+				errs <- fmt.Errorf("activate valid key: %w", err)
+				return
+			}
+		}
+	}()
+
+	for range 3 {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			<-start
+			for range iterations {
+				ciphertext, err := enc.Encrypt("concurrent encryption")
+				if err != nil || ciphertext == "" {
+					errs <- fmt.Errorf("encrypt while activating: ciphertext=%q err=%w", ciphertext, err)
+					return
+				}
+
+				for _, knownCiphertext := range []string{ciphertextA, ciphertextB} {
+					plaintext, err := enc.Decrypt(knownCiphertext)
+					if err == nil && plaintext != "encrypted with key A" && plaintext != "encrypted with key B" {
+						errs <- fmt.Errorf("decrypt while activating returned unexpected plaintext %q", plaintext)
+						return
+					}
+				}
+			}
+		}()
+	}
+
+	close(start)
+	wg.Wait()
+	close(errs)
+	for err := range errs {
+		require.NoError(t, err)
+	}
+
+	require.NoError(t, enc.ActivateKey(keyB))
+	ciphertext, err := enc.Encrypt("stable after concurrent activation")
+	require.NoError(t, err)
+	plaintext, err := enc.Decrypt(ciphertext)
+	require.NoError(t, err)
+	require.Equal(t, "stable after concurrent activation", plaintext)
 }

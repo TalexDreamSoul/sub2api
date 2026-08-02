@@ -137,8 +137,8 @@ export default {
         totpEncryptionKeyPlaceholder: '64 位十六进制密钥（保存后不回显）',
         generateKey: '生成密钥',
         totpKeyConfigured: '固定加密密钥已在当前进程生效。',
-        totpKeyNotConfigured: '输入或生成密钥并保存，重启服务后即可启用 TOTP。',
-        totpRestartRequired: '密钥已保存，重启服务后生效。重启前不能启用 TOTP。'
+        totpKeyNotConfigured: '输入或生成密钥并保存，固定密钥会立即生效，随后即可启用 TOTP。',
+        totpRestartRequired: '密钥已保存，但当前进程尚未激活。请重新保存密钥或检查服务状态。'
       },
       security: {
         passkey: 'Passkey 登录',
@@ -154,7 +154,7 @@ export default {
         stepUp: '敏感操作二次验证 (step-up 2FA)',
         stepUpHint: '开启后，账号/代理导出、备份创建与下载、S3 配置修改、提升管理员等敏感操作需要先完成 TOTP 二次验证（15 分钟内有效）。开启前需本人已启用 2FA；关闭该开关本身也需要二次验证。',
         stepUpEnableRequiresTotp: '开启敏感操作二次验证前，请先在个人资料中为当前账号启用 2FA (TOTP)。',
-        stepUpEnableRequiresSystemTotp: '请先在本页配置并保存系统 TOTP 的加密密钥、开启系统 TOTP 后重启服务；随后在个人资料为当前账号启用 TOTP，最后再开启敏感操作二次验证。',
+        stepUpEnableRequiresSystemTotp: '请先在本页配置并保存系统 TOTP 加密密钥并开启系统 TOTP；随后在个人资料为当前账号启用 TOTP，最后再开启敏感操作二次验证。',
         sessionBinding: '会话 IP/UA 绑定',
         sessionBindingHint: '将登录会话与客户端 IP 和 User-Agent 绑定，任一变化即强制该会话失效并需重新登录（提升被盗凭证的利用门槛）。',
         auditRetention: '操作日志保留天数',

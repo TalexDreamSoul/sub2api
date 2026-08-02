@@ -5,6 +5,7 @@ import (
 	"crypto/rand"
 	"crypto/subtle"
 	"encoding/hex"
+	"errors"
 	"fmt"
 	"log/slog"
 	"time"
@@ -51,6 +52,13 @@ type TotpCache interface {
 type SecretEncryptor interface {
 	Encrypt(plaintext string) (string, error)
 	Decrypt(ciphertext string) (string, error)
+}
+
+// RuntimeSecretEncryptor can atomically activate a persisted encryption key.
+// Existing fixed keys are never rotated through this interface by the settings handler.
+type RuntimeSecretEncryptor interface {
+	SecretEncryptor
+	ActivateKey(keyHex string) error
 }
 
 // TotpSetupSession represents a TOTP setup session
@@ -123,6 +131,18 @@ func NewTotpService(
 		emailService:      emailService,
 		emailQueueService: emailQueueService,
 	}
+}
+
+// ActivateEncryptionKey makes a newly persisted fixed key available without restarting.
+func (s *TotpService) ActivateEncryptionKey(keyHex string) error {
+	if s == nil || s.encryptor == nil {
+		return errors.New("TOTP secret encryptor is not configured")
+	}
+	activator, ok := s.encryptor.(RuntimeSecretEncryptor)
+	if !ok {
+		return errors.New("TOTP secret encryptor does not support runtime key activation")
+	}
+	return activator.ActivateKey(keyHex)
 }
 
 // GetStatus returns the TOTP status for a user

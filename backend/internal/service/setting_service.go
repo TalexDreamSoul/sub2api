@@ -44,6 +44,10 @@ type DefaultSubscriptionGroupReader interface {
 // proxyURLs maps proxy ID to resolved URL for provider-level proxy support.
 type WebSearchManagerBuilder func(cfg *WebSearchEmulationConfig, proxyURLs map[int64]string)
 
+type runtimeTotpEncryptionKey struct {
+	normalized string
+}
+
 // SettingService 系统设置服务
 type SettingService struct {
 	settingRepo                 SettingRepository
@@ -59,6 +63,7 @@ type SettingService struct {
 	openAICodexUASF             singleflight.Group
 	codexRestrictionPolicyCache atomic.Value // *cachedCodexRestrictionPolicy
 	codexRestrictionPolicySF    singleflight.Group
+	totpEncryptionKey           atomic.Pointer[runtimeTotpEncryptionKey]
 
 	cyberSessionBlockRuntimeCache atomic.Value // *cachedCyberSessionBlockRuntime
 	cyberSessionBlockRuntimeSF    singleflight.Group
@@ -220,10 +225,14 @@ const (
 
 // NewSettingService 创建系统设置服务实例
 func NewSettingService(settingRepo SettingRepository, cfg *config.Config) *SettingService {
-	return &SettingService{
+	service := &SettingService{
 		settingRepo: settingRepo,
 		cfg:         cfg,
 	}
+	if cfg != nil && cfg.Totp.EncryptionKeyConfigured {
+		_ = service.ActivateTotpEncryptionKey(cfg.Totp.EncryptionKey)
+	}
+	return service
 }
 
 // SetDefaultSubscriptionGroupReader injects an optional group reader for default subscription validation.

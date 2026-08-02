@@ -183,8 +183,14 @@ func TestSettingHandler_UpdateSettings_TotpWithUnchangedFeishuPayloadSkipsStepUp
 				service.SettingKeyFeishuNotifyMessageURL: messageURL,
 				service.SettingKeyFeishuNotifyPanelURL:   panelURL,
 			}}
-			svc := service.NewSettingService(repo, &config.Config{Default: config.DefaultConfig{UserConcurrency: 5}})
+			cfg := &config.Config{
+				Default: config.DefaultConfig{UserConcurrency: 5},
+				Totp:    config.TotpConfig{EncryptionKey: strings.Repeat("01", 32)},
+			}
+			svc := service.NewSettingService(repo, cfg)
 			handler := NewSettingHandler(svc, nil, nil, nil, nil, nil, nil)
+			totpService, _ := newRuntimeActivatableTotpService(t, cfg, svc)
+			handler.SetStepUpDeps(totpService, nil)
 
 			body := map[string]any{
 				"totp_enabled":              true,

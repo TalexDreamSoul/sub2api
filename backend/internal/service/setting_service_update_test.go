@@ -950,3 +950,19 @@ func TestSettingService_PendingTotpEnableIsRuntimeDisabled(t *testing.T) {
 	require.NoError(t, err)
 	require.False(t, publicSettings.TotpEnabled)
 }
+
+func TestSettingService_ActivateTotpEncryptionKeyMakesPersistedKeyCurrent(t *testing.T) {
+	key := "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+	svc := NewSettingService(&settingGetAllRepoStub{values: map[string]string{
+		SettingKeyTotpEncryptionKey: key,
+	}}, &config.Config{})
+
+	require.NoError(t, svc.ActivateTotpEncryptionKey(key))
+	require.True(t, svc.IsTotpEncryptionKeyConfigured())
+	require.True(t, svc.IsCurrentTotpEncryptionKey(key))
+
+	settings, err := svc.GetAllSettings(context.Background())
+	require.NoError(t, err)
+	require.True(t, settings.TotpEncryptionKeySaved)
+	require.False(t, settings.TotpRestartRequired)
+}

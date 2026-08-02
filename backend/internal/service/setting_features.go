@@ -228,16 +228,33 @@ func (s *SettingService) passkeyDesiredSettingEnabled(settings map[string]string
 	return value == "true"
 }
 
-// IsTotpEncryptionKeyConfigured 检查当前进程是否已加载固定 TOTP 加密密钥。
+// ActivateTotpEncryptionKey marks a validated fixed key active in this process.
+func (s *SettingService) ActivateTotpEncryptionKey(key string) error {
+	if s == nil {
+		return errors.New("setting service is not configured")
+	}
+	normalized := strings.ToLower(strings.TrimSpace(key))
+	decoded, err := hex.DecodeString(normalized)
+	if err != nil || len(decoded) != 32 {
+		return errors.New("TOTP encryption key must be exactly 64 hexadecimal characters")
+	}
+	s.totpEncryptionKey.Store(&runtimeTotpEncryptionKey{normalized: normalized})
+	return nil
+}
+
+// IsTotpEncryptionKeyConfigured 检查当前进程是否已激活固定 TOTP 加密密钥。
 func (s *SettingService) IsTotpEncryptionKeyConfigured() bool {
-	return s != nil && s.cfg != nil && s.cfg.Totp.EncryptionKeyConfigured
+	return s != nil && s.totpEncryptionKey.Load() != nil
 }
 
 // IsCurrentTotpEncryptionKey checks the active encryption root without
 // exposing it through an API response.
 func (s *SettingService) IsCurrentTotpEncryptionKey(key string) bool {
-	return s != nil && s.cfg != nil && s.cfg.Totp.EncryptionKeyConfigured &&
-		strings.EqualFold(strings.TrimSpace(key), strings.TrimSpace(s.cfg.Totp.EncryptionKey))
+	if s == nil {
+		return false
+	}
+	active := s.totpEncryptionKey.Load()
+	return active != nil && strings.EqualFold(strings.TrimSpace(key), active.normalized)
 }
 
 // IsSessionBindingEnabled 检查会话 IP/UA 绑定是否启用（默认关闭）。

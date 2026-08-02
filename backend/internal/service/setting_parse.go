@@ -349,7 +349,7 @@ func (s *SettingService) parseSettings(settings map[string]string) *SystemSettin
 		passkeyRPID = storedPasskeyRPID
 		passkeyRPOrigins = storedPasskeyOrigins
 	}
-	totpRestartRequired := storedTotpKey != "" && s != nil && s.cfg != nil && storedTotpKey != s.cfg.Totp.EncryptionKey
+	totpRestartRequired := storedTotpKey != "" && !s.IsCurrentTotpEncryptionKey(storedTotpKey)
 	passkeyRestartRequired := false
 	if passkeyConfigurationSaved && s != nil && s.cfg != nil {
 		passkeyRestartRequired = !s.cfg.WebAuthn.Enabled ||

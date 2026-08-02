@@ -666,12 +666,12 @@ func (h *SettingHandler) UpdateSettings(c *gin.Context) {
 		forwardedClientIPHeaders = append([]string(nil), (*req.ForwardedClientIPHeaders)...)
 	}
 
-	// 开启敏感操作 step-up 门控前，系统 TOTP 必须已经在当前进程可用；
-	// 固定加密密钥首次保存后需重启才能激活，不能在同一次保存中越过该前置条件。
+	// 开启敏感操作 step-up 门控前，系统 TOTP 必须已在此前的保存中生效；
+	// 同一次请求不能同时首次启用系统 TOTP 和 step-up，因为当前操作者尚无法完成个人 TOTP 绑定。
 	if stepUpEnabled && !previousSettings.StepUpEnabled {
 		if !h.settingService.IsTotpEnabled(c.Request.Context()) {
 			response.ErrorWithDetails(c, http.StatusBadRequest,
-				"Enable system TOTP with a fixed encryption key and restart the service before turning on step-up verification",
+				"Save and enable system TOTP with a fixed encryption key before turning on step-up verification",
 				"STEP_UP_ENABLE_REQUIRES_SYSTEM_TOTP", nil)
 			return
 		}
@@ -2122,6 +2122,20 @@ func (h *SettingHandler) UpdateSettings(c *gin.Context) {
 	if err := h.settingService.UpdateSettingsWithAuthSourceDefaultsOmitting(c.Request.Context(), settings, authSourceDefaults, omitted); err != nil {
 		response.ErrorFrom(c, err)
 		return
+	}
+	if totpEncryptionKey != "" && !h.settingService.IsCurrentTotpEncryptionKey(totpEncryptionKey) {
+		if h.totpService == nil {
+			response.InternalError(c, "TOTP runtime key activation is unavailable")
+			return
+		}
+		if err := h.totpService.ActivateEncryptionKey(totpEncryptionKey); err != nil {
+			response.InternalError(c, "Failed to activate TOTP encryption key")
+			return
+		}
+		if err := h.settingService.ActivateTotpEncryptionKey(totpEncryptionKey); err != nil {
+			response.InternalError(c, "Failed to activate TOTP configuration")
+			return
+		}
 	}
 	if h.opsService != nil {
 		h.opsService.SetMonitoringEnabled(settings.OpsMonitoringEnabled)

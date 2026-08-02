@@ -11316,10 +11316,13 @@ async function saveSettings() {
       );
       return;
     }
-    // 开启 step-up 开关但本人未启用 2FA：给出可操作的专用提示
-    if (
-      (error as { reason?: string })?.reason === "STEP_UP_ENABLE_REQUIRES_TOTP"
-    ) {
+    // 开启 step-up 时按后端的明确前置条件提示引导配置顺序。
+    const stepUpEnableReason = stepUpBlockReason(error);
+    if (stepUpEnableReason === "STEP_UP_ENABLE_REQUIRES_SYSTEM_TOTP") {
+      appStore.showError(t("admin.settings.security.stepUpEnableRequiresSystemTotp"));
+      return;
+    }
+    if (stepUpEnableReason === "STEP_UP_ENABLE_REQUIRES_TOTP") {
       appStore.showError(t("admin.settings.security.stepUpEnableRequiresTotp"));
       return;
     }

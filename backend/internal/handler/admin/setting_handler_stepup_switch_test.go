@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 
 	"github.com/Wei-Shaw/sub2api/internal/config"
@@ -17,14 +18,34 @@ import (
 )
 
 // step-up 开关转换的门控测试。
-// 测试环境不注入认证上下文/userService，因此一旦触发校验会以 401/403/500 中止；
-// 借此区分「触发了转换校验」与「直接放行到常规保存（200）」。
+// 启用时先验证系统 TOTP 已在运行时可用，再验证当前 JWT 管理员的个人 TOTP；
+// 测试覆盖两层前置条件及其拒绝时不得持久化开关的契约。
 
 func newStepUpSwitchTestHandler(t *testing.T, stored map[string]string) (*SettingHandler, *settingHandlerRepoStub) {
 	t.Helper()
 	gin.SetMode(gin.TestMode)
 	repo := &settingHandlerRepoStub{values: stored}
 	svc := service.NewSettingService(repo, &config.Config{Default: config.DefaultConfig{UserConcurrency: 5}})
+	return NewSettingHandler(svc, nil, nil, nil, nil, nil, nil), repo
+}
+
+// newStepUpSwitchTestHandlerWithSystemTotpRuntime 构造已加载固定密钥且全局 TOTP 已开启的运行时，
+// 使测试能穿过系统前置条件，覆盖后续的 JWT 和机器凭证门控。
+func newStepUpSwitchTestHandlerWithSystemTotpRuntime(t *testing.T, stored map[string]string) (*SettingHandler, *settingHandlerRepoStub) {
+	t.Helper()
+	if stored == nil {
+		stored = map[string]string{}
+	}
+	stored[service.SettingKeyTotpEnabled] = "true"
+	gin.SetMode(gin.TestMode)
+	repo := &settingHandlerRepoStub{values: stored}
+	svc := service.NewSettingService(repo, &config.Config{
+		Totp: config.TotpConfig{
+			EncryptionKey:           strings.Repeat("ab", 32),
+			EncryptionKeyConfigured: true,
+		},
+		Default: config.DefaultConfig{UserConcurrency: 5},
+	})
 	return NewSettingHandler(svc, nil, nil, nil, nil, nil, nil), repo
 }
 
@@ -45,20 +66,21 @@ func doUpdateSettings(t *testing.T, h *SettingHandler, body map[string]any, prep
 	return rec
 }
 
-// 开启开关（false→true）：无认证上下文时拒绝，且带专用错误标记。
-func TestUpdateSettingsEnableStepUpRejectsWithoutSession(t *testing.T) {
+// 首次配置时系统 TOTP 尚未在运行时可用：先返回明确前置条件错误，且不保存开关。
+func TestUpdateSettingsEnableStepUpRequiresSystemTotpRuntime(t *testing.T) {
 	h, repo := newStepUpSwitchTestHandler(t, map[string]string{})
 
 	rec := doUpdateSettings(t, h, map[string]any{"step_up_enabled": true}, nil)
 
-	require.Equal(t, http.StatusForbidden, rec.Code)
-	require.Contains(t, rec.Body.String(), "STEP_UP_ENABLE_REQUIRES_TOTP")
-	require.NotEqual(t, "true", repo.values[service.SettingKeyStepUpEnabled])
+	require.Equal(t, http.StatusBadRequest, rec.Code)
+	require.Contains(t, rec.Body.String(), "STEP_UP_ENABLE_REQUIRES_SYSTEM_TOTP")
+	_, persisted := repo.values[service.SettingKeyStepUpEnabled]
+	require.False(t, persisted)
 }
 
-// 开启开关：admin API key（机器凭证）一律拒绝，reason 与门控保持一致便于前端分流。
+// 系统 TOTP 已在运行时可用后：admin API key（机器凭证）仍一律拒绝。
 func TestUpdateSettingsEnableStepUpRejectsAdminAPIKey(t *testing.T) {
-	h, _ := newStepUpSwitchTestHandler(t, map[string]string{})
+	h, _ := newStepUpSwitchTestHandlerWithSystemTotpRuntime(t, map[string]string{})
 
 	rec := doUpdateSettings(t, h, map[string]any{"step_up_enabled": true}, func(c *gin.Context) {
 		c.Set("auth_method", service.AuditAuthMethodAdminAPIKey)
@@ -68,9 +90,9 @@ func TestUpdateSettingsEnableStepUpRejectsAdminAPIKey(t *testing.T) {
 	require.Contains(t, rec.Body.String(), "STEP_UP_ADMIN_API_KEY_FORBIDDEN")
 }
 
-// 开启开关：有认证会话但 userService 未注入时 fail-closed（500），不得放行。
+// 系统 TOTP 已在运行时可用后：有认证 JWT 会话但 userService 未注入时 fail-closed（500），不得放行。
 func TestUpdateSettingsEnableStepUpFailsClosedWithoutUserService(t *testing.T) {
-	h, repo := newStepUpSwitchTestHandler(t, map[string]string{})
+	h, repo := newStepUpSwitchTestHandlerWithSystemTotpRuntime(t, map[string]string{})
 
 	rec := doUpdateSettings(t, h, map[string]any{"step_up_enabled": true}, func(c *gin.Context) {
 		c.Set(string(middleware.ContextKeyUser), middleware.AuthSubject{UserID: 1})

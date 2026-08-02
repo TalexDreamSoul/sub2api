@@ -622,10 +622,15 @@ func (h *SettingHandler) UpdateSettings(c *gin.Context) {
 		forwardedClientIPHeaders = append([]string(nil), (*req.ForwardedClientIPHeaders)...)
 	}
 
-	// 开启敏感操作 step-up 门控属自锁风险操作：仅允许本人已启用 TOTP 的管理员会话开启，
-	// 否则开启后操作者立即被挡在所有敏感操作之外。仅在 false→true 的开启瞬间校验，
-	// 保持开启状态的常规设置保存不受影响。
+	// 开启敏感操作 step-up 门控前，系统 TOTP 必须已经在当前进程可用；
+	// 固定加密密钥首次保存后需重启才能激活，不能在同一次保存中越过该前置条件。
 	if stepUpEnabled && !previousSettings.StepUpEnabled {
+		if !h.settingService.IsTotpEnabled(c.Request.Context()) {
+			response.ErrorWithDetails(c, http.StatusBadRequest,
+				"Enable system TOTP with a fixed encryption key and restart the service before turning on step-up verification",
+				"STEP_UP_ENABLE_REQUIRES_SYSTEM_TOTP", nil)
+			return
+		}
 		if !h.ensureActorTotpForStepUp(c) {
 			return
 		}

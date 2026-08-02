@@ -154,6 +154,7 @@ export default {
         stepUp: 'Step-up 2FA for Sensitive Operations',
         stepUpHint: 'When enabled, sensitive operations (account/proxy export, backup creation and download, S3 config changes, promoting admins) require a recent TOTP verification (valid for 15 minutes). Your own account must have 2FA enabled before turning this on; turning it off also requires step-up verification.',
         stepUpEnableRequiresTotp: 'Enable 2FA (TOTP) for your own account in Profile before turning on step-up verification.',
+        stepUpEnableRequiresSystemTotp: 'First configure and save the system TOTP encryption key, enable system TOTP, and restart the service. Then enable TOTP for your own account in Profile before turning on step-up verification.',
         sessionBinding: 'Session IP/UA Binding',
         sessionBindingHint: 'Bind login sessions to the client IP and User-Agent. Any change immediately invalidates the session and forces re-login, raising the bar for stolen-credential reuse.',
         auditRetention: 'Audit Log Retention (days)',

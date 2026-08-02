@@ -5,6 +5,7 @@ import (
 	"database/sql"
 	"encoding/json"
 	"fmt"
+	"log/slog"
 	"strings"
 
 	"github.com/Wei-Shaw/sub2api/internal/config"
@@ -58,7 +59,10 @@ func applyPersistedRuntimeSecuritySettings(ctx context.Context, db *sql.DB, cfg 
 		return nil
 	}
 	if rpID == "" || rawOrigins == "" {
-		return fmt.Errorf("persisted WebAuthn configuration requires both RP ID and RP origins")
+		slog.Warn("ignoring incomplete persisted WebAuthn configuration",
+			"rp_id_present", rpID != "",
+			"origins_present", rawOrigins != "")
+		return nil
 	}
 	var origins []string
 	if err := json.Unmarshal([]byte(rawOrigins), &origins); err != nil {

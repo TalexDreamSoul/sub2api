@@ -3,14 +3,15 @@ package admin
 import (
 	"bytes"
 	"context"
+	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"net/http"
 	"net/http/httptest"
 	"strings"
 	"testing"
 
 	"github.com/Wei-Shaw/sub2api/internal/config"
-	"github.com/Wei-Shaw/sub2api/internal/repository"
 	"github.com/Wei-Shaw/sub2api/internal/server/middleware"
 	"github.com/Wei-Shaw/sub2api/internal/service"
 
@@ -80,10 +81,35 @@ func doUpdateSettings(t *testing.T, h *SettingHandler, body map[string]any, prep
 	return rec
 }
 
-func newRuntimeActivatableTotpService(t *testing.T, cfg *config.Config, settingService *service.SettingService) (*service.TotpService, service.SecretEncryptor) {
+type runtimeSecretEncryptorFake struct {
+	key string
+}
+
+func (e *runtimeSecretEncryptorFake) ActivateKey(key string) error {
+	normalized := strings.ToLower(strings.TrimSpace(key))
+	decoded, err := hex.DecodeString(normalized)
+	if err != nil || len(decoded) != 32 {
+		return errors.New("TOTP encryption key must be exactly 64 hexadecimal characters")
+	}
+	e.key = normalized
+	return nil
+}
+
+func (e *runtimeSecretEncryptorFake) Encrypt(plaintext string) (string, error) {
+	return e.key + ":" + plaintext, nil
+}
+
+func (e *runtimeSecretEncryptorFake) Decrypt(ciphertext string) (string, error) {
+	prefix := e.key + ":"
+	if !strings.HasPrefix(ciphertext, prefix) {
+		return "", errors.New("ciphertext was encrypted with a different key")
+	}
+	return strings.TrimPrefix(ciphertext, prefix), nil
+}
+
+func newRuntimeActivatableTotpService(t *testing.T, cfg *config.Config, settingService *service.SettingService) (*service.TotpService, *runtimeSecretEncryptorFake) {
 	t.Helper()
-	encryptor, err := repository.NewAESEncryptor(cfg)
-	require.NoError(t, err)
+	encryptor := &runtimeSecretEncryptorFake{key: strings.ToLower(strings.TrimSpace(cfg.Totp.EncryptionKey))}
 	return service.NewTotpService(nil, encryptor, nil, settingService, nil, nil), encryptor
 }
 

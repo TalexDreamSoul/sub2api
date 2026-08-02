@@ -9,7 +9,6 @@ import (
 	"testing"
 
 	"github.com/Wei-Shaw/sub2api/internal/config"
-	"github.com/Wei-Shaw/sub2api/internal/repository"
 	servermiddleware "github.com/Wei-Shaw/sub2api/internal/server/middleware"
 	"github.com/Wei-Shaw/sub2api/internal/service"
 
@@ -126,10 +125,7 @@ func TestUpdateSettingsFirstTotpKeyActivatesRuntimeEncryptor(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, "subsequent TOTP secret", plaintext)
 
-	oldEncryptor, err := repository.NewAESEncryptor(&config.Config{
-		Totp: config.TotpConfig{EncryptionKey: oldRuntimeKey},
-	})
-	require.NoError(t, err)
+	oldEncryptor := &runtimeSecretEncryptorFake{key: oldRuntimeKey}
 	_, err = oldEncryptor.Decrypt(ciphertext)
 	require.Error(t, err, "the pre-activation runtime key must not decrypt newly persisted TOTP secrets")
 }

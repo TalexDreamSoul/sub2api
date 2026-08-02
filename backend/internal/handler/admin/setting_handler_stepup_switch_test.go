@@ -49,6 +49,19 @@ func newStepUpSwitchTestHandlerWithSystemTotpRuntime(t *testing.T, stored map[st
 	return NewSettingHandler(svc, nil, nil, nil, nil, nil, nil), repo
 }
 
+type stepUpSwitchUserRepoStub struct {
+	service.UserRepository
+	user *service.User
+}
+
+func (s *stepUpSwitchUserRepoStub) GetByID(context.Context, int64) (*service.User, error) {
+	return s.user, nil
+}
+
+func (*stepUpSwitchUserRepoStub) GetUserAvatar(context.Context, int64) (*service.UserAvatar, error) {
+	return nil, nil
+}
+
 func doUpdateSettings(t *testing.T, h *SettingHandler, body map[string]any, prepare func(c *gin.Context)) *httptest.ResponseRecorder {
 	t.Helper()
 	rawBody, err := json.Marshal(body)
@@ -102,15 +115,33 @@ func TestUpdateSettingsEnableStepUpFailsClosedWithoutUserService(t *testing.T) {
 	require.NotEqual(t, "true", repo.values[service.SettingKeyStepUpEnabled])
 }
 
-// 关闭开关（true→false）本身是敏感操作：无认证上下文时被 step-up 门控以 401 拦截。
-func TestUpdateSettingsDisableStepUpRequiresStepUp(t *testing.T) {
+// 系统 TOTP 未在当前进程可用时，关闭误开的 step-up 必须允许恢复且持久化为 false。
+func TestUpdateSettingsStepUpDisableWithoutSystemTotpAllowsRecovery(t *testing.T) {
 	h, repo := newStepUpSwitchTestHandler(t, map[string]string{
 		service.SettingKeyStepUpEnabled: "true",
 	})
 
 	rec := doUpdateSettings(t, h, map[string]any{"step_up_enabled": false}, nil)
 
-	require.Equal(t, http.StatusUnauthorized, rec.Code)
+	require.Equal(t, http.StatusOK, rec.Code)
+	require.Equal(t, "false", repo.values[service.SettingKeyStepUpEnabled])
+}
+
+// 系统 TOTP 运行时，未启用个人 TOTP 的操作者仍不得关闭 step-up，且不得持久化变更。
+func TestUpdateSettingsStepUpDisableWithSystemTotpRequiresPersonalTotp(t *testing.T) {
+	h, repo := newStepUpSwitchTestHandlerWithSystemTotpRuntime(t, map[string]string{
+		service.SettingKeyStepUpEnabled: "true",
+	})
+	h.SetStepUpDeps(nil, service.NewUserService(&stepUpSwitchUserRepoStub{
+		user: &service.User{ID: 1, TotpEnabled: false},
+	}, nil, nil, nil))
+
+	rec := doUpdateSettings(t, h, map[string]any{"step_up_enabled": false}, func(c *gin.Context) {
+		c.Set(string(middleware.ContextKeyUser), middleware.AuthSubject{UserID: 1})
+	})
+
+	require.Equal(t, http.StatusForbidden, rec.Code)
+	require.Contains(t, rec.Body.String(), "STEP_UP_TOTP_NOT_ENABLED")
 	require.Equal(t, "true", repo.values[service.SettingKeyStepUpEnabled])
 }
 

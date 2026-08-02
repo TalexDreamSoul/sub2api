@@ -635,10 +635,10 @@ func (h *SettingHandler) UpdateSettings(c *gin.Context) {
 			return
 		}
 	}
-	// 关闭 step-up 门控本身就是敏感操作：防止拿到管理员会话的攻击者先关闸再执行导出/备份。
-	// previousSettings 已证实开关处于开启状态，使用无条件门控变体，
-	// 避免门控内部二次读取开关时因存储故障 fail-open（前端捕获 STEP_UP_REQUIRED 弹码重试）。
-	if !stepUpEnabled && previousSettings.StepUpEnabled {
+	// 关闭 step-up 门控本身通常是敏感操作：防止拿到管理员会话的攻击者先关闸再执行导出/备份。
+	// 但系统 TOTP 未在当前进程运行时，个人 TOTP 无法绑定；此时必须允许关闭误开的门控以恢复配置。
+	// 系统 TOTP 运行后仍使用无条件门控变体，避免内部二次读取开关时因存储故障 fail-open。
+	if !stepUpEnabled && previousSettings.StepUpEnabled && h.settingService.IsTotpEnabled(c.Request.Context()) {
 		if !middleware.EnforceStepUpAlways(c, h.totpService, h.userService) {
 			return
 		}

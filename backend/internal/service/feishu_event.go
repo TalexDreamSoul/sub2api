@@ -153,20 +153,24 @@ func verifyFeishuEventSignature(headers FeishuEventHeaders, encryptKey string, b
 }
 
 func decryptFeishuEvent(value, encryptKey string) ([]byte, error) {
-	ciphertext, err := base64.StdEncoding.DecodeString(value)
-	if err != nil {
-		return nil, err
+	encoded, err := base64.StdEncoding.DecodeString(value)
+	if err != nil || len(encoded) < 2*aes.BlockSize {
+		return nil, ErrFeishuEventInvalid
 	}
 	key := sha256.Sum256([]byte(encryptKey))
 	block, err := aes.NewCipher(key[:])
-	if err != nil || len(ciphertext) == 0 || len(ciphertext)%aes.BlockSize != 0 {
+	if err != nil {
+		return nil, ErrFeishuEventInvalid
+	}
+	iv, ciphertext := encoded[:aes.BlockSize], encoded[aes.BlockSize:]
+	if len(ciphertext) == 0 || len(ciphertext)%aes.BlockSize != 0 {
 		return nil, ErrFeishuEventInvalid
 	}
 	plain := make([]byte, len(ciphertext))
-	cipher.NewCBCDecrypter(block, key[:aes.BlockSize]).CryptBlocks(plain, ciphertext)
-	padding := int(plain[len(plain)-1])
-	if padding < 1 || padding > aes.BlockSize || padding > len(plain) || !bytes.Equal(plain[len(plain)-padding:], bytes.Repeat([]byte{byte(padding)}, padding)) {
+	cipher.NewCBCDecrypter(block, iv).CryptBlocks(plain, ciphertext)
+	start, end := bytes.IndexByte(plain, '{'), bytes.LastIndexByte(plain, '}')
+	if start < 0 || end < start {
 		return nil, ErrFeishuEventInvalid
 	}
-	return plain[:len(plain)-padding], nil
+	return plain[start : end+1], nil
 }

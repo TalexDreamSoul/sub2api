@@ -8,12 +8,14 @@ import (
 	"time"
 
 	infraerrors "github.com/Wei-Shaw/sub2api/internal/pkg/errors"
+	"github.com/Wei-Shaw/sub2api/internal/util/logredact"
 )
 
 type FeishuDiagnosticStep struct {
 	Name      string `json:"name"`
 	Status    string `json:"status"`
 	Message   string `json:"message"`
+	Detail    string `json:"detail,omitempty"`
 	LatencyMS int64  `json:"latency_ms"`
 }
 
@@ -38,7 +40,7 @@ func (s *FeishuNotificationService) Diagnose(ctx context.Context, userID int64, 
 	cfgStarted := time.Now()
 	cfg, err := s.GetConfig(ctx)
 	if err != nil {
-		report.addDiagnostic("config", "failed", diagnosticError(err), cfgStarted)
+		report.addDiagnosticError("config", err, cfgStarted)
 		return report
 	}
 	report.AppID = cfg.AppID
@@ -59,7 +61,7 @@ func (s *FeishuNotificationService) Diagnose(ctx context.Context, userID int64, 
 
 	tokenStarted := time.Now()
 	if _, err := s.fetchTenantAccessToken(ctx, cfg); err != nil {
-		report.addDiagnostic("tenant_token", "failed", diagnosticError(err), tokenStarted)
+		report.addDiagnosticError("tenant_token", err, tokenStarted)
 	} else {
 		report.addDiagnostic("tenant_token", "passed", "tenant token acquired", tokenStarted)
 	}
@@ -70,7 +72,7 @@ func (s *FeishuNotificationService) Diagnose(ctx context.Context, userID int64, 
 	} else if s == nil || s.bindingRepo == nil {
 		report.addDiagnostic("binding", "failed", "binding repository is unavailable", bindingStarted)
 	} else if binding, err := s.bindingRepo.GetFeishuNotificationBinding(ctx, userID, cfg.AppID); err != nil {
-		report.addDiagnostic("binding", "failed", diagnosticError(err), bindingStarted)
+		report.addDiagnosticError("binding", err, bindingStarted)
 	} else if !binding.NotificationEnabled {
 		report.addDiagnostic("binding", "warning", "user is bound but notifications are disabled", bindingStarted)
 	} else {
@@ -88,7 +90,7 @@ func (s *FeishuNotificationService) Diagnose(ctx context.Context, userID int64, 
 	if s == nil || s.outboxRepo == nil {
 		report.addDiagnostic("outbox", "failed", "notification outbox is unavailable", outboxStarted)
 	} else if stats, err := s.outboxRepo.Stats(ctx); err != nil {
-		report.addDiagnostic("outbox", "failed", diagnosticError(err), outboxStarted)
+		report.addDiagnosticError("outbox", err, outboxStarted)
 	} else {
 		report.Outbox = stats
 		status := "passed"
@@ -104,7 +106,7 @@ func (s *FeishuNotificationService) Diagnose(ctx context.Context, userID int64, 
 		if userID <= 0 {
 			report.addDiagnostic("test_message", "failed", "test user is required", sendStarted)
 		} else if err := s.SendTest(ctx, userID); err != nil {
-			report.addDiagnostic("test_message", "failed", diagnosticError(err), sendStarted)
+			report.addDiagnosticError("test_message", err, sendStarted)
 		} else {
 			report.addDiagnostic("test_message", "passed", "test card delivered", sendStarted)
 		}
@@ -113,6 +115,14 @@ func (s *FeishuNotificationService) Diagnose(ctx context.Context, userID int64, 
 }
 
 func (r *FeishuDiagnosticReport) addDiagnostic(name, status, message string, started time.Time) {
+	r.addDiagnosticWithDetail(name, status, message, "", started)
+}
+
+func (r *FeishuDiagnosticReport) addDiagnosticError(name string, err error, started time.Time) {
+	r.addDiagnosticWithDetail(name, "failed", diagnosticError(err), diagnosticErrorDetail(err), started)
+}
+
+func (r *FeishuDiagnosticReport) addDiagnosticWithDetail(name, status, message, detail string, started time.Time) {
 	if status == "failed" {
 		r.Healthy = false
 	}
@@ -120,6 +130,7 @@ func (r *FeishuDiagnosticReport) addDiagnostic(name, status, message string, sta
 		Name:      name,
 		Status:    status,
 		Message:   message,
+		Detail:    detail,
 		LatencyMS: time.Since(started).Milliseconds(),
 	})
 }
@@ -138,4 +149,32 @@ func diagnosticError(err error) string {
 		return "request_canceled"
 	}
 	return "integration_request_failed"
+}
+
+const maxFeishuDiagnosticDetailRunes = 512
+
+func diagnosticErrorDetail(err error) string {
+	if err == nil {
+		return ""
+	}
+	var apiErr *feishuNotifyAPIError
+	if errors.As(err, &apiErr) {
+		message := logredact.RedactText(apiErr.Message, "api_key", "apikey", "token", "secret", "key")
+		return truncateFeishuDiagnosticDetail(fmt.Sprintf("%s status=%d code=%s msg=%s",
+			apiErr.Operation, apiErr.Status, apiErr.Code, message))
+	}
+	if infraerrors.Reason(err) != "" {
+		return truncateFeishuDiagnosticDetail(infraerrors.Message(err))
+	}
+	detail := logredact.RedactText(err.Error(), "api_key", "apikey", "token", "secret", "key")
+	return truncateFeishuDiagnosticDetail(detail)
+}
+
+func truncateFeishuDiagnosticDetail(detail string) string {
+	detail = strings.TrimSpace(strings.ToValidUTF8(detail, ""))
+	runes := []rune(detail)
+	if len(runes) > maxFeishuDiagnosticDetailRunes {
+		return string(runes[:maxFeishuDiagnosticDetailRunes-1]) + "…"
+	}
+	return detail
 }

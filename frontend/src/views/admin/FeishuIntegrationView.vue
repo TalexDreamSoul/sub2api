@@ -43,7 +43,10 @@
           <div v-for="step in diagnostic.steps" :key="step.name" class="grid gap-2 py-3 sm:grid-cols-[160px_100px_1fr_80px] sm:items-center">
             <span class="font-mono text-sm text-gray-700 dark:text-gray-300">{{ step.name }}</span>
             <span :class="statusClass(step.status)">{{ statusLabel(step.status) }}</span>
-            <span class="text-sm text-gray-600 dark:text-gray-400">{{ step.message }}</span>
+            <div class="min-w-0 text-sm text-gray-600 dark:text-gray-400">
+              <div>{{ step.message }}</div>
+              <pre v-if="step.detail" class="mt-1 whitespace-pre-wrap break-all font-mono text-xs leading-relaxed text-red-600 dark:text-red-300">{{ step.detail }}</pre>
+            </div>
             <span class="text-right text-xs text-gray-400">{{ step.latency_ms }} ms</span>
           </div>
         </div>

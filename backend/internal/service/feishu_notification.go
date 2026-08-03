@@ -659,13 +659,36 @@ func feishuNotifyAPIErrorCode(body string) int64 {
 	return code.Int()
 }
 
+type feishuNotifyAPIError struct {
+	Operation string
+	Status    int
+	Code      string
+	Message   string
+}
+
+func (e *feishuNotifyAPIError) Error() string {
+	if e == nil {
+		return "feishu API request failed"
+	}
+	return fmt.Sprintf("%s status=%d code=%s msg=%s", e.Operation, e.Status, e.Code, e.Message)
+}
+
+func newFeishuNotifyAPIError(operation string, resp *req.Response, body string) error {
+	return &feishuNotifyAPIError{
+		Operation: operation,
+		Status:    resp.StatusCode,
+		Code:      getFeishuNotifyJSON(body, "code"),
+		Message:   firstNonEmpty(getFeishuNotifyJSON(body, "msg"), getFeishuNotifyJSON(body, "message")),
+	}
+}
+
 func validateFeishuNotifyAPIResponse(operation string, resp *req.Response) error {
 	if resp == nil {
 		return fmt.Errorf("%s response is nil", operation)
 	}
 	body := strings.TrimSpace(resp.String())
 	if !resp.IsSuccessState() {
-		return fmt.Errorf("%s status=%d code=%s msg=%s", operation, resp.StatusCode, getFeishuNotifyJSON(body, "code"), firstNonEmpty(getFeishuNotifyJSON(body, "msg"), getFeishuNotifyJSON(body, "message")))
+		return newFeishuNotifyAPIError(operation, resp, body)
 	}
 	if body == "" {
 		return fmt.Errorf("%s status=%d empty response body", operation, resp.StatusCode)
@@ -677,7 +700,7 @@ func validateFeishuNotifyAPIResponse(operation string, resp *req.Response) error
 		return fmt.Errorf("%s status=%d missing code in response", operation, resp.StatusCode)
 	}
 	if code := feishuNotifyAPIErrorCode(body); code != 0 {
-		return fmt.Errorf("%s status=%d code=%s msg=%s", operation, resp.StatusCode, getFeishuNotifyJSON(body, "code"), firstNonEmpty(getFeishuNotifyJSON(body, "msg"), getFeishuNotifyJSON(body, "message")))
+		return newFeishuNotifyAPIError(operation, resp, body)
 	}
 	return nil
 }

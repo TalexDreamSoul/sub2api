@@ -1021,6 +1021,7 @@ export interface FeishuDiagnosticStep {
   name: string;
   status: "passed" | "warning" | "failed";
   message: string;
+  detail?: string;
   latency_ms: number;
 }
 

@@ -5,6 +5,7 @@ package service
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"log/slog"
 	"net/http"
 	"net/http/httptest"
@@ -12,12 +13,14 @@ import (
 	"sync/atomic"
 	"testing"
 	"time"
+	"unicode/utf8"
 
 	"github.com/stretchr/testify/require"
 )
 
 type feishuNotificationTestBindingRepo struct {
 	binding *FeishuUserIdentityBinding
+	err     error
 }
 
 func (r *feishuNotificationTestBindingRepo) UpsertFeishuUserIdentityBinding(ctx context.Context, input UpsertFeishuUserIdentityBindingInput) (*FeishuUserIdentityBinding, error) {
@@ -27,6 +30,9 @@ func (r *feishuNotificationTestBindingRepo) UpsertFeishuUserIdentityBinding(ctx 
 func (r *feishuNotificationTestBindingRepo) GetFeishuNotificationBinding(ctx context.Context, userID int64, appID string) (*FeishuUserIdentityBinding, error) {
 	if r == nil || r.binding == nil {
 		return nil, ErrFeishuNotificationNotBound
+	}
+	if r.err != nil {
+		return nil, r.err
 	}
 	return r.binding, nil
 }
@@ -400,6 +406,82 @@ func TestFeishuDiagnosticsReportsConfigTokenBindingAndOutbox(t *testing.T) {
 	for _, step := range report.Steps {
 		require.NotEqual(t, "failed", step.Status, step.Name)
 	}
+}
+
+func TestFeishuDiagnoseTestMessageDetailIncludesUpstreamResponse(t *testing.T) {
+	svc, cleanup := newFeishuNotificationTestService(t, map[string]any{
+		"code":                0,
+		"tenant_access_token": "tenant-token",
+	}, func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusBadGateway)
+		require.NoError(t, json.NewEncoder(w).Encode(map[string]any{
+			"code": 190001,
+			"msg":  "recipient unavailable",
+		}))
+	})
+	defer cleanup()
+	svc.outboxRepo = &feishuOutboxTestRepo{}
+
+	step := requireFeishuDiagnosticStep(t, svc.Diagnose(context.Background(), 1, true), "test_message")
+
+	require.Equal(t, "failed", step.Status)
+	require.Equal(t, "integration_request_failed", step.Message)
+	require.Contains(t, step.Detail, "send feishu message")
+	require.Contains(t, step.Detail, "status=502")
+	require.Contains(t, step.Detail, "code=190001")
+	require.Contains(t, step.Detail, "msg=recipient unavailable")
+}
+
+func TestFeishuDiagnoseTestMessageDetailRedactsAndBoundsUnknownErrors(t *testing.T) {
+	svc, cleanup := newFeishuNotificationTestService(t, map[string]any{
+		"code":                0,
+		"tenant_access_token": "tenant-token",
+	}, func(http.ResponseWriter, *http.Request) {})
+	defer cleanup()
+	svc.outboxRepo = &feishuOutboxTestRepo{}
+	svc.bindingRepo = &feishuNotificationTestBindingRepo{
+		binding: &FeishuUserIdentityBinding{UserID: 1, AppID: "cli-test", OpenID: "ou-test", NotificationEnabled: true},
+		err:     errors.New("upstream rejected request " + string([]byte{0xff}) + " access_token=tenant-value client_secret=client-secret-value api_key=api-key-value token=token-value secret=secret-value key=key-value " + strings.Repeat("界", 600)),
+	}
+
+	step := requireFeishuDiagnosticStep(t, svc.Diagnose(context.Background(), 1, true), "test_message")
+
+	require.Equal(t, "integration_request_failed", step.Message)
+	require.Contains(t, step.Detail, "upstream rejected request")
+	require.Contains(t, step.Detail, "access_token=***")
+	require.Contains(t, step.Detail, "client_secret=***")
+	for _, sensitive := range []string{"tenant-value", "client-secret-value", "api-key-value", "token-value", "secret-value", "key-value"} {
+		require.NotContains(t, step.Detail, sensitive)
+	}
+	require.True(t, utf8.ValidString(step.Detail))
+	require.LessOrEqual(t, len([]rune(step.Detail)), 512)
+}
+
+func TestFeishuDiagnoseStructuredErrorDetailPreservesReason(t *testing.T) {
+	svc, cleanup := newFeishuNotificationTestService(t, map[string]any{
+		"code":                0,
+		"tenant_access_token": "tenant-token",
+	}, func(http.ResponseWriter, *http.Request) {})
+	defer cleanup()
+	svc.outboxRepo = &feishuOutboxTestRepo{}
+	svc.bindingRepo = &feishuNotificationTestBindingRepo{}
+
+	step := requireFeishuDiagnosticStep(t, svc.Diagnose(context.Background(), 1, true), "test_message")
+
+	require.Equal(t, "failed", step.Status)
+	require.Equal(t, "FEISHU_NOTIFICATION_NOT_BOUND", step.Message)
+	require.Equal(t, "feishu notification is not bound", step.Detail)
+}
+
+func requireFeishuDiagnosticStep(t *testing.T, report FeishuDiagnosticReport, name string) FeishuDiagnosticStep {
+	t.Helper()
+	for _, step := range report.Steps {
+		if step.Name == name {
+			return step
+		}
+	}
+	require.Failf(t, "diagnostic step missing", "missing step %q", name)
+	return FeishuDiagnosticStep{}
 }
 
 func TestBalanceLowEmailFallbackLogsWhenNoRecipients(t *testing.T) {

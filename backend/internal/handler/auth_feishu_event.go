@@ -28,6 +28,7 @@ func (h *AuthHandler) FeishuEventCallback(c *gin.Context) {
 	}, body)
 	if err != nil {
 		if errors.Is(err, service.ErrFeishuEventUnauthorized) || errors.Is(err, service.ErrFeishuEventInvalid) {
+			slog.Warn("reject feishu event", "reason", err, "body_bytes", len(body))
 			c.JSON(http.StatusUnauthorized, gin.H{"code": 1, "msg": "event verification failed"})
 			return
 		}

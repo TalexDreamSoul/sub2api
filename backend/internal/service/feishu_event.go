@@ -115,13 +115,14 @@ func (s *FeishuNotificationService) VerifyAndReceiveEvent(ctx context.Context, h
 	if s.eventRepo == nil {
 		return FeishuEventAcceptResult{}, fmt.Errorf("feishu event repository is unavailable")
 	}
-	legacyCardAction := event.Type == "card.action.trigger" && event.Header.EventType == ""
-	if cfg.EncryptKey != "" {
-		if legacyCardAction {
-			if err := verifyFeishuLegacyCardSignature(headers, cfg.VerificationToken, body, time.Now()); err != nil {
-				return FeishuEventAcceptResult{}, err
-			}
-		} else if err := verifyFeishuEventSignature(headers, cfg.EncryptKey, body, time.Now()); err != nil {
+	cardAction := event.Type == "card.action.trigger" || event.Header.EventType == "card.action.trigger"
+	legacyCardAction := cardAction && event.Header.EventType == ""
+	if cardAction {
+		if err := verifyFeishuCardSignature(headers, cfg.VerificationToken, body, time.Now()); err != nil {
+			return FeishuEventAcceptResult{}, err
+		}
+	} else if cfg.EncryptKey != "" {
+		if err := verifyFeishuEventSignature(headers, cfg.EncryptKey, body, time.Now()); err != nil {
 			return FeishuEventAcceptResult{}, err
 		}
 	}
@@ -155,7 +156,7 @@ func (s *FeishuNotificationService) VerifyAndReceiveEvent(ctx context.Context, h
 	return FeishuEventAcceptResult{Duplicate: !inserted}, nil
 }
 
-func verifyFeishuLegacyCardSignature(headers FeishuEventHeaders, verificationToken string, body []byte, now time.Time) error {
+func verifyFeishuCardSignature(headers FeishuEventHeaders, verificationToken string, body []byte, now time.Time) error {
 	timestamp, err := strconv.ParseInt(strings.TrimSpace(headers.Timestamp), 10, 64)
 	if err != nil || strings.TrimSpace(headers.Nonce) == "" || strings.TrimSpace(headers.Signature) == "" || strings.TrimSpace(verificationToken) == "" {
 		return ErrFeishuEventUnauthorized

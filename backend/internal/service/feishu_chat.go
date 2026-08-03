@@ -277,13 +277,6 @@ func (s *FeishuNotificationService) renderFeishuSystemStatus(ctx context.Context
 	return fmt.Sprintf("Sub2API 系统状态\n今日请求：%d\n今日活跃用户：%d\n今日 Token：%d\n正常账号：%d / %d\n异常：%d，限流：%d，过载：%d", stats.TodayRequests, stats.ActiveUsers, stats.TodayTokens, stats.NormalAccounts, stats.TotalAccounts, stats.ErrorAccounts, stats.RateLimitAccounts, stats.OverloadAccounts), nil
 }
 
-func requireFeishuAssistantAdmin(allowed bool) error {
-	if !allowed {
-		return ErrFeishuAssistantAdminRequired
-	}
-	return nil
-}
-
 func isFeishuChatNotConfigured(err error) bool {
 	return errors.Is(err, ErrFeishuChatNotConfigured)
 }

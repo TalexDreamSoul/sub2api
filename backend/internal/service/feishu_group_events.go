@@ -128,7 +128,15 @@ func (s *FeishuNotificationService) handleFeishuGroupMessage(ctx context.Context
 
 	switch command {
 	case "/群状态", "/group-status":
-		return s.enqueueFeishuChatReply(ctx, receipt, chatID, "群绑定状态", renderFeishuChatBindingStatus(chat))
+		text := renderFeishuChatBindingStatus(chat)
+		if chat.Sub2APIGroupID != nil {
+			groupStatus, err := s.renderFeishuGroupStatus(ctx, *chat.Sub2APIGroupID)
+			if err != nil {
+				return "", err
+			}
+			text += "\n\n" + groupStatus
+		}
+		return s.enqueueFeishuChatReply(ctx, receipt, chatID, "群绑定状态", text)
 	case "/群概览", "/群日报", "/group-usage":
 		if chat.Sub2APIGroupID == nil {
 			return s.enqueueFeishuChatReply(ctx, receipt, chatID, "群用量", "此群未关联 Sub2API 分组。")

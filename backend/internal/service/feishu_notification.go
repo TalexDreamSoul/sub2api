@@ -650,10 +650,6 @@ func (s *FeishuNotificationService) cachedTenantToken(cacheKey string, now time.
 	return s.tokenValue
 }
 
-func buildFeishuMessageURL(raw string) (string, error) {
-	return buildFeishuMessageURLForType(raw, "open_id")
-}
-
 func buildFeishuMessageURLForType(raw, recipientType string) (string, error) {
 	u, err := url.Parse(strings.TrimSpace(raw))
 	if err != nil {

@@ -196,7 +196,7 @@ func (s *FeishuNotificationService) TestAssistantModel(ctx context.Context) erro
 		return err
 	}
 	if !cfg.Enabled || s.apiKeyService == nil {
-		return fmt.Errorf("Feishu assistant is not enabled")
+		return fmt.Errorf("feishu assistant is not enabled")
 	}
 	key, err := s.apiKeyService.GetByID(ctx, cfg.APIKeyID)
 	if err != nil || key == nil || !key.IsActive() {

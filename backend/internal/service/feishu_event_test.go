@@ -3,8 +3,12 @@
 package service
 
 import (
+	"bytes"
 	"context"
+	"crypto/aes"
+	"crypto/cipher"
 	"crypto/sha256"
+	"encoding/base64"
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
@@ -96,5 +100,28 @@ func TestFeishuEventURLVerificationAllowsTokenHandshakeWhenEncryptKeyConfigured(
 	result, err := svc.VerifyAndReceiveEvent(context.Background(), FeishuEventHeaders{}, []byte(`{"type":"url_verification","token":"verify-token","challenge":"challenge-without-signature"}`))
 	require.NoError(t, err)
 	require.Equal(t, "challenge-without-signature", result.Challenge)
+	require.Zero(t, events.received)
+}
+
+func TestFeishuEventEncryptedURLVerificationAllowsTokenHandshakeWithoutSignature(t *testing.T) {
+	svc, events := newFeishuEventTestService()
+	repo := svc.settingRepo.(*contentModerationTestSettingRepo)
+	const encryptKey = "configured-encrypt-key"
+	repo.values[SettingKeyFeishuNotifyEncryptKey] = encryptKey
+
+	plain := []byte(`{"type":"url_verification","token":"verify-token","challenge":"encrypted-challenge"}`)
+	padding := aes.BlockSize - len(plain)%aes.BlockSize
+	plain = append(plain, bytes.Repeat([]byte{byte(padding)}, padding)...)
+	key := sha256.Sum256([]byte(encryptKey))
+	block, err := aes.NewCipher(key[:])
+	require.NoError(t, err)
+	ciphertext := make([]byte, len(plain))
+	cipher.NewCBCEncrypter(block, key[:aes.BlockSize]).CryptBlocks(ciphertext, plain)
+	body, err := json.Marshal(map[string]string{"encrypt": base64.StdEncoding.EncodeToString(ciphertext)})
+	require.NoError(t, err)
+
+	result, err := svc.VerifyAndReceiveEvent(t.Context(), FeishuEventHeaders{}, body)
+	require.NoError(t, err)
+	require.Equal(t, "encrypted-challenge", result.Challenge)
 	require.Zero(t, events.received)
 }

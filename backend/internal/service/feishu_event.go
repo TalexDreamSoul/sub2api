@@ -77,15 +77,34 @@ func (s *FeishuNotificationService) VerifyAndReceiveEvent(ctx context.Context, h
 	if err := json.Unmarshal(body, &encrypted); err != nil {
 		return FeishuEventAcceptResult{}, ErrFeishuEventInvalid
 	}
-	// Feishu's initial URL verification request is an unencrypted challenge and
-	// may not carry X-Lark signature headers even when an Encrypt Key is already
-	// configured. The verification token still authenticates this one-shot
-	// handshake, so validate it before requiring signed event delivery.
-	if encrypted.Encrypt == "" && (encrypted.Challenge != "" || encrypted.Type == "url_verification") {
-		if encrypted.Challenge == "" || subtle.ConstantTimeCompare([]byte(strings.TrimSpace(encrypted.Token)), []byte(cfg.VerificationToken)) != 1 {
+	plainBody := body
+	event := encrypted
+	if encrypted.Encrypt != "" {
+		if cfg.EncryptKey == "" {
 			return FeishuEventAcceptResult{}, ErrFeishuEventUnauthorized
 		}
-		return FeishuEventAcceptResult{Challenge: encrypted.Challenge}, nil
+		plainBody, err = decryptFeishuEvent(encrypted.Encrypt, cfg.EncryptKey)
+		if err != nil {
+			return FeishuEventAcceptResult{}, ErrFeishuEventUnauthorized
+		}
+		if err := json.Unmarshal(plainBody, &event); err != nil {
+			return FeishuEventAcceptResult{}, ErrFeishuEventInvalid
+		}
+	}
+
+	token := strings.TrimSpace(event.Header.Token)
+	if token == "" {
+		token = strings.TrimSpace(event.Token)
+	}
+	// Feishu URL verification can be delivered either as plain JSON or inside
+	// an encrypted envelope before signature headers are available. The
+	// verification token (and, for encrypted payloads, successful decryption)
+	// authenticates this one-shot handshake. Normal events remain signed.
+	if event.Challenge != "" || event.Type == "url_verification" {
+		if event.Challenge == "" || subtle.ConstantTimeCompare([]byte(token), []byte(cfg.VerificationToken)) != 1 {
+			return FeishuEventAcceptResult{}, ErrFeishuEventUnauthorized
+		}
+		return FeishuEventAcceptResult{Challenge: event.Challenge}, nil
 	}
 	if s.eventRepo == nil {
 		return FeishuEventAcceptResult{}, fmt.Errorf("feishu event repository is unavailable")
@@ -95,34 +114,8 @@ func (s *FeishuNotificationService) VerifyAndReceiveEvent(ctx context.Context, h
 			return FeishuEventAcceptResult{}, err
 		}
 	}
-
-	plainBody := body
-	if encrypted.Encrypt != "" {
-		if cfg.EncryptKey == "" {
-			return FeishuEventAcceptResult{}, ErrFeishuEventUnauthorized
-		}
-		plainBody, err = decryptFeishuEvent(encrypted.Encrypt, cfg.EncryptKey)
-		if err != nil {
-			return FeishuEventAcceptResult{}, ErrFeishuEventUnauthorized
-		}
-	}
-
-	var event feishuEventEnvelope
-	if err := json.Unmarshal(plainBody, &event); err != nil {
-		return FeishuEventAcceptResult{}, ErrFeishuEventInvalid
-	}
-	token := strings.TrimSpace(event.Header.Token)
-	if token == "" {
-		token = strings.TrimSpace(event.Token)
-	}
 	if subtle.ConstantTimeCompare([]byte(token), []byte(cfg.VerificationToken)) != 1 {
 		return FeishuEventAcceptResult{}, ErrFeishuEventUnauthorized
-	}
-	if event.Challenge != "" || event.Type == "url_verification" {
-		if event.Challenge == "" {
-			return FeishuEventAcceptResult{}, ErrFeishuEventInvalid
-		}
-		return FeishuEventAcceptResult{Challenge: event.Challenge}, nil
 	}
 	if event.Header.AppID != "" && event.Header.AppID != cfg.AppID {
 		return FeishuEventAcceptResult{}, ErrFeishuEventUnauthorized

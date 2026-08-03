@@ -116,6 +116,10 @@ func (s *FeishuNotificationService) Start() {
 		s.workerWG.Add(1)
 		go s.runChannelMonitorNotificationWorker(ctx)
 	}
+	if s.dailyUsageRepo != nil && s.outboxRepo != nil {
+		s.workerWG.Add(1)
+		go s.runDailyDigestWorker(ctx)
+	}
 }
 
 func (s *FeishuNotificationService) Stop() {

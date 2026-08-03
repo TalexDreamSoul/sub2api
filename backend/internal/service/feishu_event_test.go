@@ -87,3 +87,14 @@ func TestFeishuEventRejectsWrongVerificationToken(t *testing.T) {
 	_, err := svc.VerifyAndReceiveEvent(context.Background(), FeishuEventHeaders{}, []byte(`{"type":"url_verification","token":"wrong","challenge":"x"}`))
 	require.ErrorIs(t, err, ErrFeishuEventUnauthorized)
 }
+
+func TestFeishuEventURLVerificationAllowsTokenHandshakeWhenEncryptKeyConfigured(t *testing.T) {
+	svc, events := newFeishuEventTestService()
+	repo := svc.settingRepo.(*contentModerationTestSettingRepo)
+	repo.values[SettingKeyFeishuNotifyEncryptKey] = "configured-encrypt-key"
+
+	result, err := svc.VerifyAndReceiveEvent(context.Background(), FeishuEventHeaders{}, []byte(`{"type":"url_verification","token":"verify-token","challenge":"challenge-without-signature"}`))
+	require.NoError(t, err)
+	require.Equal(t, "challenge-without-signature", result.Challenge)
+	require.Zero(t, events.received)
+}

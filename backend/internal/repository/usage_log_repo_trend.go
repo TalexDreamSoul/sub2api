@@ -8,6 +8,8 @@ import (
 	"time"
 
 	"github.com/Wei-Shaw/sub2api/internal/pkg/usagestats"
+	"github.com/Wei-Shaw/sub2api/internal/service"
+	"github.com/lib/pq"
 )
 
 // TrendDataPoint represents a single point in trend data
@@ -217,6 +219,60 @@ func (r *usageLogRepository) GetUserSpendingRanking(ctx context.Context, startTi
 		TotalRequests:   totalRequests,
 		TotalTokens:     totalTokens,
 	}, nil
+}
+
+func (r *usageLogRepository) GetFeishuDailyDigestStats(ctx context.Context, userIDs []int64, startTime, endTime time.Time, excludedAPIKeyID int64) (result map[int64]service.FeishuDailyUsageStat, err error) {
+	result = make(map[int64]service.FeishuDailyUsageStat, len(userIDs))
+	if len(userIDs) == 0 {
+		return result, nil
+	}
+	rows, err := r.sql.QueryContext(ctx, `
+		WITH user_spend AS (
+			SELECT u.user_id,
+			       COALESCE(SUM(u.actual_cost), 0) AS actual_cost,
+			       COUNT(*) AS requests,
+			       COALESCE(SUM(u.input_tokens + u.output_tokens + u.cache_creation_tokens + u.cache_read_tokens), 0) AS tokens
+			FROM usage_logs u
+			WHERE u.created_at >= $1 AND u.created_at < $2
+			  AND ($3 = 0 OR u.api_key_id <> $3)
+			GROUP BY u.user_id
+		), ranked AS (
+			SELECT user_id, actual_cost, requests, tokens,
+			       RANK() OVER (ORDER BY actual_cost DESC, tokens DESC, user_id ASC) AS usage_rank,
+			       COUNT(*) OVER () AS active_users,
+			       COALESCE(SUM(actual_cost) OVER (), 0) AS total_actual_cost
+			FROM user_spend
+		)
+		SELECT requested.user_id,
+		       COALESCE(ranked.actual_cost, 0), COALESCE(ranked.requests, 0), COALESCE(ranked.tokens, 0),
+		       COALESCE(ranked.usage_rank, 0), COALESCE(ranked.active_users, totals.active_users, 0),
+		       COALESCE(ranked.total_actual_cost, totals.total_actual_cost, 0)
+		FROM unnest($4::bigint[]) AS requested(user_id)
+		LEFT JOIN ranked ON ranked.user_id=requested.user_id
+		CROSS JOIN (
+			SELECT COUNT(*) AS active_users, COALESCE(SUM(actual_cost), 0) AS total_actual_cost FROM user_spend
+		) totals
+		ORDER BY requested.user_id`, startTime, endTime, excludedAPIKeyID, pq.Array(userIDs))
+	if err != nil {
+		return nil, err
+	}
+	defer func() {
+		if closeErr := rows.Close(); closeErr != nil && err == nil {
+			err = closeErr
+			result = nil
+		}
+	}()
+	for rows.Next() {
+		var item service.FeishuDailyUsageStat
+		if err = rows.Scan(&item.UserID, &item.ActualCost, &item.Requests, &item.Tokens, &item.Rank, &item.ActiveUsers, &item.TotalActualCost); err != nil {
+			return nil, err
+		}
+		result[item.UserID] = item
+	}
+	if err = rows.Err(); err != nil {
+		return nil, err
+	}
+	return result, nil
 }
 
 // GetUserUsageTrendByUserID 获取指定用户的使用趋势

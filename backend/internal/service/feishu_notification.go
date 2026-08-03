@@ -150,6 +150,11 @@ type FeishuNotificationService struct {
 	apiKeyRepo         APIKeyRepository
 	preferenceRepo     NotificationPreferenceRepository
 	channelMonitorRepo ChannelMonitorRepository
+	apiKeyRequestRepo  FeishuAPIKeyRequestRepository
+	apiKeyService      *APIKeyService
+	dailyUsageRepo     feishuDailyDigestUsageReader
+	dailyDigestMu      sync.Mutex
+	dailyDigestDate    string
 
 	tokenMu            sync.RWMutex
 	tokenCacheKey      string

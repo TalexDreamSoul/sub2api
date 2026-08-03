@@ -316,6 +316,35 @@ func (r *feishuUserIdentityRepository) ListFeishuChannelRecipientUserIDs(ctx con
 	return ids, rows.Err()
 }
 
+func (r *feishuUserIdentityRepository) ListFeishuDailyDigestUserIDs(ctx context.Context, appID string, afterUserID int64, limit int) ([]int64, error) {
+	if r == nil || r.db == nil {
+		return nil, service.ErrFeishuNotificationDisabled
+	}
+	if limit <= 0 || limit > 500 {
+		limit = 500
+	}
+	rows, err := r.db.QueryContext(ctx, `SELECT binding.user_id
+		FROM user_feishu_identity_bindings binding
+		LEFT JOIN user_notification_preferences preference
+		  ON preference.user_id=binding.user_id AND preference.channel='feishu' AND preference.category='daily_digest'
+		WHERE binding.app_id=$1 AND binding.purpose=$2 AND binding.notification_enabled=TRUE
+		  AND binding.user_id>$3 AND COALESCE(preference.enabled,TRUE)=TRUE
+		ORDER BY binding.user_id LIMIT $4`, strings.TrimSpace(appID), service.FeishuIdentityPurposeNotify, afterUserID, limit)
+	if err != nil {
+		return nil, err
+	}
+	defer func() { _ = rows.Close() }()
+	ids := make([]int64, 0, limit)
+	for rows.Next() {
+		var id int64
+		if err := rows.Scan(&id); err != nil {
+			return nil, err
+		}
+		ids = append(ids, id)
+	}
+	return ids, rows.Err()
+}
+
 func normalizeFeishuBindingMetadata(in map[string]any) map[string]any {
 	if len(in) == 0 {
 		return map[string]any{}

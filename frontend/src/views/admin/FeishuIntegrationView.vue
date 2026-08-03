@@ -34,6 +34,32 @@
         <div class="flex justify-end"><button class="btn btn-primary" type="button" :disabled="saving" @click="saveConfig"><Icon name="check" size="sm" />{{ saving ? tx('保存中', 'Saving') : tx('保存配置', 'Save configuration') }}</button></div>
       </section>
 
+      <section v-else-if="activeTab === 'assistant'" class="space-y-5">
+        <div class="flex items-center justify-between border-b border-gray-100 pb-4 dark:border-dark-700">
+          <div><h2 class="section-title">{{ tx('智能账户助手', 'AI account assistant') }}</h2><p class="mt-1 text-sm text-gray-500">{{ tx('确定性指令始终可用，模型仅用于自由文本理解和只读 Function Calling。', 'Deterministic commands remain available; the model only handles natural language and read-only Function Calling.') }}</p></div>
+          <Toggle v-model="assistantForm.enabled" />
+        </div>
+        <div class="grid gap-4 md:grid-cols-2">
+          <label class="field"><span>{{ tx('专用 API Key ID', 'Dedicated API Key ID') }}</span><input v-model.number="assistantForm.api_key_id" type="number" min="1" class="input" /><small>{{ assistantConfig?.api_key_hint || tx('请使用独立 Key，机器人用量将从用户排行中排除', 'Use a dedicated key; assistant usage is excluded from user rankings') }}</small></label>
+          <label class="field"><span>{{ tx('模型', 'Model') }}</span><input v-model.trim="assistantForm.model" class="input" placeholder="gpt-5.5" /></label>
+          <label class="field"><span>{{ tx('API Key 申请策略', 'API Key request policy') }}</span><select v-model="assistantForm.api_key_request_mode" class="input"><option value="disabled">{{ tx('关闭', 'Disabled') }}</option><option value="manual">{{ tx('人工审批', 'Manual approval') }}</option><option value="auto">{{ tx('自动签发', 'Automatic issuance') }}</option></select></label>
+          <label class="field"><span>{{ tx('每用户最大活跃 Key', 'Maximum active keys per user') }}</span><input v-model.number="assistantForm.max_active_keys" type="number" min="1" max="100" class="input" /></label>
+          <label class="field"><span>{{ tx('默认分组 ID（可选）', 'Default group ID (optional)') }}</span><input v-model.number="assistantForm.default_group_id" type="number" min="0" class="input" /></label>
+          <label class="field"><span>{{ tx('日报时间', 'Daily digest time') }}</span><input v-model="assistantForm.daily_digest_time" type="time" class="input" /></label>
+          <label class="flex items-center gap-2 text-sm text-gray-700 dark:text-gray-300 md:col-span-2"><input v-model="assistantForm.daily_digest_enabled" type="checkbox" class="checkbox" />{{ tx('启用每日使用、排名、占比和剩余额度推送', 'Send daily usage, rank, share, and remaining quota digest') }}</label>
+        </div>
+        <div class="flex flex-wrap justify-end gap-2"><button class="btn btn-secondary" type="button" :disabled="assistantTesting" @click="testAssistant"><Icon name="chart" size="sm" />{{ assistantTesting ? tx('测试中', 'Testing') : tx('测试 Function Calling', 'Test Function Calling') }}</button><button class="btn btn-primary" type="button" :disabled="assistantSaving" @click="saveAssistant"><Icon name="check" size="sm" />{{ assistantSaving ? tx('保存中', 'Saving') : tx('保存助手配置', 'Save assistant') }}</button></div>
+      </section>
+
+      <section v-else-if="activeTab === 'requests'" class="space-y-5">
+        <div class="flex items-center justify-between"><div><h2 class="section-title">{{ tx('API Key 申请', 'API Key requests') }}</h2><p class="mt-1 text-sm text-gray-500">{{ tx('完整 API Key 只在站内安全页面展示，不会发送到飞书。', 'Full API keys are only shown on the authenticated site and are never sent to Feishu.') }}</p></div><button class="btn btn-secondary" type="button" @click="loadAPIKeyRequests"><Icon name="refresh" size="sm" />{{ tx('刷新', 'Refresh') }}</button></div>
+        <div class="overflow-x-auto border-y border-gray-200 dark:border-dark-700">
+          <table class="w-full text-left text-sm"><thead class="bg-gray-50 text-xs uppercase text-gray-500 dark:bg-dark-800"><tr><th class="px-3 py-2">ID</th><th class="px-3 py-2">{{ tx('用户', 'User') }}</th><th class="px-3 py-2">{{ tx('分组', 'Group') }}</th><th class="px-3 py-2">{{ tx('状态', 'Status') }}</th><th class="px-3 py-2">{{ tx('创建时间', 'Created') }}</th><th class="px-3 py-2">{{ tx('操作', 'Actions') }}</th></tr></thead>
+            <tbody class="divide-y divide-gray-100 dark:divide-dark-700"><tr v-for="item in apiKeyRequests" :key="item.id"><td class="px-3 py-3 font-mono">{{ item.id }}</td><td class="px-3 py-3">#{{ item.user_id }}</td><td class="px-3 py-3">#{{ item.requested_group_id }}</td><td class="px-3 py-3"><span :class="statusClass(item.status)">{{ item.status }}</span></td><td class="px-3 py-3">{{ formatDate(item.created_at) }}</td><td class="px-3 py-3"><div v-if="item.status === 'pending'" class="flex gap-2"><button class="btn btn-primary btn-sm" type="button" @click="decideRequest(item.id, true)">{{ tx('批准', 'Approve') }}</button><button class="btn btn-secondary btn-sm" type="button" @click="decideRequest(item.id, false)">{{ tx('拒绝', 'Reject') }}</button></div><span v-else>—</span></td></tr></tbody></table>
+          <div v-if="!apiKeyRequests.length" class="py-10 text-center text-sm text-gray-500">{{ tx('暂无待处理申请', 'No pending requests') }}</div>
+        </div>
+      </section>
+
       <section v-else-if="activeTab === 'diagnostics'" class="space-y-5">
         <h2 class="section-title">{{ tx('全链路诊断', 'End-to-end diagnostics') }}</h2>
         <UserPicker v-model="selectedUserId" :label="tx('测试用户', 'Test user')" />
@@ -59,7 +85,7 @@
         <div class="flex justify-end"><button class="btn btn-primary" type="button" :disabled="!canPreview" @click="showMessageConfirm = true"><Icon name="chat" size="sm" />{{ tx('预览并发送', 'Preview and send') }}</button></div>
       </section>
 
-      <section v-else class="space-y-5">
+      <section v-else-if="activeTab === 'deliveries'" class="space-y-5">
         <div class="flex items-center justify-between"><h2 class="section-title">{{ tx('最近投递', 'Recent deliveries') }}</h2><button class="btn btn-secondary" type="button" @click="loadDeliveries"><Icon name="refresh" size="sm" />{{ tx('刷新', 'Refresh') }}</button></div>
         <div class="overflow-x-auto border-y border-gray-200 dark:border-dark-700">
           <table class="w-full text-left text-sm"><thead class="bg-gray-50 text-xs uppercase text-gray-500 dark:bg-dark-800"><tr><th class="px-3 py-2">ID</th><th class="px-3 py-2">{{ tx('用户', 'User') }}</th><th class="px-3 py-2">{{ tx('类型', 'Category') }}</th><th class="px-3 py-2">{{ tx('状态', 'Status') }}</th><th class="px-3 py-2">{{ tx('尝试', 'Attempts') }}</th><th class="px-3 py-2">{{ tx('创建时间', 'Created') }}</th></tr></thead>
@@ -87,7 +113,7 @@ import ConfirmDialog from '@/components/common/ConfirmDialog.vue'
 import TotpStepUpDialog from '@/components/auth/TotpStepUpDialog.vue'
 import UserPicker from '@/components/admin/feishu/UserPicker.vue'
 import { buildApiUrl } from '@/api/client'
-import { settingsAPI, type SystemSettings, type FeishuDiagnosticReport, type FeishuDelivery, type FeishuBoundUser } from '@/api/admin/settings'
+import { settingsAPI, type SystemSettings, type FeishuDiagnosticReport, type FeishuDelivery, type FeishuBoundUser, type FeishuAssistantConfig, type FeishuAPIKeyRequest } from '@/api/admin/settings'
 import { useAppStore } from '@/stores'
 import { useStepUp, isStepUpCancelled, isStepUpBlocked } from '@/composables/useStepUp'
 
@@ -95,7 +121,7 @@ const { locale } = useI18n()
 const appStore = useAppStore()
 const stepUp = useStepUp()
 const tx = (zh: string, en: string) => locale.value.startsWith('zh') ? zh : en
-const activeTab = ref<'config' | 'diagnostics' | 'messages' | 'deliveries'>('config')
+const activeTab = ref<'config' | 'assistant' | 'requests' | 'diagnostics' | 'messages' | 'deliveries'>('config')
 const settings = ref<SystemSettings | null>(null)
 const saving = ref(false)
 const diagnosing = ref(false)
@@ -108,9 +134,16 @@ const messageIdempotencyKey = ref('')
 const showMessageConfirm = ref(false)
 const deliveries = ref<FeishuDelivery[]>([])
 const form = reactive({ enabled: false, appId: '', appSecret: '', verificationToken: '', encryptKey: '', panelUrl: '/feishu/panel' })
+const assistantConfig = ref<FeishuAssistantConfig | null>(null)
+const assistantSaving = ref(false)
+const assistantTesting = ref(false)
+const apiKeyRequests = ref<FeishuAPIKeyRequest[]>([])
+const assistantForm = reactive<FeishuAssistantConfig>({ enabled: false, api_key_id: 0, model: '', daily_digest_enabled: false, daily_digest_time: '00:05', api_key_request_mode: 'manual', default_group_id: 0, max_active_keys: 5 })
 
 const tabs = computed(() => [
   { key: 'config' as const, icon: 'cog' as const, label: tx('配置', 'Configuration') },
+  { key: 'assistant' as const, icon: 'chat' as const, label: tx('智能助手', 'Assistant') },
+  { key: 'requests' as const, icon: 'key' as const, label: tx('Key 申请', 'Key requests') },
   { key: 'diagnostics' as const, icon: 'chart' as const, label: tx('诊断', 'Diagnostics') },
   { key: 'messages' as const, icon: 'chat' as const, label: tx('私聊', 'Messages') },
   { key: 'deliveries' as const, icon: 'inbox' as const, label: tx('投递记录', 'Deliveries') },
@@ -130,8 +163,8 @@ function tabClass(key: string) {
 }
 function statusClass(status: string) {
   const base = 'inline-flex w-fit rounded px-2 py-0.5 text-xs font-medium'
-  if (['passed', 'sent', 'processed'].includes(status)) return `${base} bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-300`
-  if (['failed', 'dead'].includes(status)) return `${base} bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-300`
+  if (['passed', 'sent', 'processed', 'issued'].includes(status)) return `${base} bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-300`
+  if (['failed', 'dead', 'rejected', 'cancelled'].includes(status)) return `${base} bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-300`
   if (['warning', 'pending'].includes(status)) return `${base} bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-300`
   return `${base} bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-300`
 }
@@ -164,6 +197,42 @@ async function saveConfig() {
     await loadSettings()
   } catch (error) { reportError(error) } finally { saving.value = false }
 }
+async function loadAssistant() {
+  try {
+    const value = await settingsAPI.getFeishuAssistantConfig()
+    assistantConfig.value = value
+    Object.assign(assistantForm, value)
+  } catch (error) { reportError(error) }
+}
+async function saveAssistant() {
+  assistantSaving.value = true
+  try {
+    const value = await stepUp.run(() => settingsAPI.updateFeishuAssistantConfig({ ...assistantForm, api_key_hint: undefined }))
+    assistantConfig.value = value
+    Object.assign(assistantForm, value)
+    appStore.showSuccess(tx('飞书助手配置已保存', 'Feishu assistant configuration saved'))
+  } catch (error) { reportError(error) } finally { assistantSaving.value = false }
+}
+async function testAssistant() {
+  assistantTesting.value = true
+  try {
+    await stepUp.run(() => settingsAPI.testFeishuAssistantModel())
+    appStore.showSuccess(tx('模型连接和 Function Calling 正常', 'Model connection and Function Calling succeeded'))
+  } catch (error) { reportError(error) } finally { assistantTesting.value = false }
+}
+async function loadAPIKeyRequests() {
+  try { apiKeyRequests.value = await settingsAPI.listFeishuAPIKeyRequests('pending', 100) }
+  catch (error) { reportError(error) }
+}
+async function decideRequest(id: number, approve: boolean) {
+  const message = approve ? tx('确认批准并创建 API Key？', 'Approve and create this API key?') : tx('确认拒绝该申请？', 'Reject this request?')
+  if (!window.confirm(message)) return
+  try {
+    await stepUp.run(() => settingsAPI.decideFeishuAPIKeyRequest(id, approve))
+    appStore.showSuccess(approve ? tx('已批准并安全通知用户', 'Approved and securely notified the user') : tx('申请已拒绝', 'Request rejected'))
+    await loadAPIKeyRequests()
+  } catch (error) { reportError(error) }
+}
 async function runDiagnostics() {
   diagnosing.value = true
   try {
@@ -190,8 +259,11 @@ async function loadDeliveries() {
   catch (error) { reportError(error) }
 }
 watch([selectedUserId, message], () => { messageIdempotencyKey.value = '' })
-watch(activeTab, value => { if (value === 'deliveries') void loadDeliveries() })
-onMounted(loadSettings)
+watch(activeTab, value => {
+  if (value === 'deliveries') void loadDeliveries()
+  if (value === 'requests') void loadAPIKeyRequests()
+})
+onMounted(() => { void Promise.all([loadSettings(), loadAssistant()]) })
 </script>
 
 <style scoped>

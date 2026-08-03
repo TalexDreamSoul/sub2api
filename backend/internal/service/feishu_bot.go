@@ -22,6 +22,8 @@ func (s *FeishuNotificationService) renderBotReply(ctx context.Context, binding 
 		return s.renderFeishuSubscriptions(ctx, binding.UserID, true)
 	case "/key", "/keys", "/apikey":
 		return s.renderFeishuAPIKeys(ctx, binding.UserID)
+	case "/日报", "/daily", "/排行", "/rank":
+		return s.renderFeishuDailyUsage(ctx, binding.UserID)
 	case "/通知", "/notification", "/notifications":
 		state := "已关闭"
 		if binding.NotificationEnabled {
@@ -30,9 +32,43 @@ func (s *FeishuNotificationService) renderBotReply(ctx context.Context, binding 
 		return "飞书自动通知：" + state + "\n如需修改，请打开账户面板。", nil
 	case "/渠道", "/channel", "/channels":
 		return s.renderFeishuChannels(ctx)
+	case "/帮助", "/help", "help":
+		return feishuBotHelpText(), nil
 	default:
-		return "可用命令：\n/概览  /余额  /额度  /订阅  /key  /渠道  /通知\n\n机器人只展示当前绑定账户的脱敏信息。", nil
+		return s.renderFeishuAssistantReply(ctx, binding, input)
 	}
+}
+
+func normalizeFeishuNaturalCommand(value string) string {
+	trimmed := strings.TrimSpace(value)
+	if trimmed == "" || strings.HasPrefix(trimmed, "/") {
+		return trimmed
+	}
+	lower := strings.ToLower(trimmed)
+	switch {
+	case (strings.Contains(lower, "申请") || strings.Contains(lower, "request")) && strings.Contains(lower, "key"):
+		return "/申请key"
+	case strings.Contains(lower, "日报") || strings.Contains(lower, "排行") || strings.Contains(lower, "今天用了") || strings.Contains(lower, "今日使用"):
+		return "/日报"
+	case strings.Contains(lower, "额度") || strings.Contains(lower, "剩余"):
+		return "/额度"
+	case strings.Contains(lower, "订阅") || strings.Contains(lower, "到期"):
+		return "/订阅"
+	case strings.Contains(lower, "余额"):
+		return "/余额"
+	case strings.Contains(lower, "apikey") || strings.Contains(lower, "api key") || strings.Contains(lower, "密钥"):
+		return "/key"
+	case strings.Contains(lower, "渠道") || strings.Contains(lower, "服务状态"):
+		return "/渠道"
+	case strings.Contains(lower, "通知"):
+		return "/通知"
+	default:
+		return trimmed
+	}
+}
+
+func feishuBotHelpText() string {
+	return "可用命令：\n/概览  /余额  /额度  /订阅  /key\n/申请key  /日报  /排行  /渠道  /通知\n\n也可以直接询问账户、订阅、额度和今日使用情况。机器人只展示当前绑定账户的脱敏信息。"
 }
 
 func normalizeFeishuBotCommand(value string) string {

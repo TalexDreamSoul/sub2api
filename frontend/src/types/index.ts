@@ -43,7 +43,7 @@ export interface FeishuNotificationStatus {
   panel_url?: string
   can_open_panel: boolean
   notification_enabled: boolean
-  preferences?: Record<'balance' | 'subscription' | 'quota' | 'security' | 'channel', boolean>
+  preferences?: Record<'balance' | 'subscription' | 'quota' | 'security' | 'channel' | 'daily_digest', boolean>
 }
 
 export interface UserNotificationSettings {
@@ -52,7 +52,7 @@ export interface UserNotificationSettings {
 
 export interface UpdateUserNotificationSettingsRequest {
   feishu_notification_enabled?: boolean
-  feishu_preferences?: Partial<Record<'balance' | 'subscription' | 'quota' | 'security' | 'channel', boolean>>
+  feishu_preferences?: Partial<Record<'balance' | 'subscription' | 'quota' | 'security' | 'channel' | 'daily_digest', boolean>>
 }
 
 // ==================== User & Auth Types ====================

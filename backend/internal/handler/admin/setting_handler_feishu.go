@@ -106,3 +106,93 @@ func (h *SettingHandler) SendFeishuAdminMessage(c *gin.Context) {
 		return gin.H{"queued": true, "inserted": inserted, "outbox_id": outboxID}, nil
 	})
 }
+
+func (h *SettingHandler) GetFeishuAssistantConfig(c *gin.Context) {
+	if h.feishuNotificationService == nil {
+		response.InternalError(c, "feishu assistant service is not configured")
+		return
+	}
+	cfg, err := h.feishuNotificationService.GetAssistantConfig(c.Request.Context())
+	if err != nil {
+		response.ErrorFrom(c, err)
+		return
+	}
+	response.Success(c, cfg)
+}
+
+func (h *SettingHandler) UpdateFeishuAssistantConfig(c *gin.Context) {
+	if h.feishuNotificationService == nil {
+		response.InternalError(c, "feishu assistant service is not configured")
+		return
+	}
+	var req service.FeishuAssistantConfig
+	if err := c.ShouldBindJSON(&req); err != nil {
+		response.BadRequest(c, "Invalid request: "+err.Error())
+		return
+	}
+	cfg, err := h.feishuNotificationService.UpdateAssistantConfig(c.Request.Context(), req)
+	if err != nil {
+		response.BadRequest(c, err.Error())
+		return
+	}
+	response.Success(c, cfg)
+}
+
+func (h *SettingHandler) ListFeishuAPIKeyRequests(c *gin.Context) {
+	if h.feishuNotificationService == nil {
+		response.InternalError(c, "feishu assistant service is not configured")
+		return
+	}
+	limit, _ := strconv.Atoi(c.DefaultQuery("limit", "100"))
+	items, err := h.feishuNotificationService.ListFeishuAPIKeyRequests(c.Request.Context(), c.Query("status"), limit)
+	if err != nil {
+		response.ErrorFrom(c, err)
+		return
+	}
+	response.Success(c, items)
+}
+
+type decideFeishuAPIKeyRequest struct {
+	Approve bool   `json:"approve"`
+	Note    string `json:"note"`
+}
+
+func (h *SettingHandler) DecideFeishuAPIKeyRequest(c *gin.Context) {
+	if h.feishuNotificationService == nil {
+		response.InternalError(c, "feishu assistant service is not configured")
+		return
+	}
+	requestID, err := strconv.ParseInt(c.Param("id"), 10, 64)
+	if err != nil || requestID <= 0 {
+		response.BadRequest(c, "invalid request id")
+		return
+	}
+	var req decideFeishuAPIKeyRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		response.BadRequest(c, "Invalid request: "+err.Error())
+		return
+	}
+	subject, ok := middleware2.GetAuthSubjectFromContext(c)
+	if !ok || subject.UserID <= 0 {
+		response.Unauthorized(c, "Administrator session is required")
+		return
+	}
+	item, err := h.feishuNotificationService.DecideFeishuAPIKeyRequest(c.Request.Context(), requestID, subject.UserID, req.Approve, req.Note)
+	if err != nil {
+		response.ErrorFrom(c, err)
+		return
+	}
+	response.Success(c, item)
+}
+
+func (h *SettingHandler) TestFeishuAssistantModel(c *gin.Context) {
+	if h.feishuNotificationService == nil {
+		response.InternalError(c, "feishu assistant service is not configured")
+		return
+	}
+	if err := h.feishuNotificationService.TestAssistantModel(c.Request.Context()); err != nil {
+		response.BadRequest(c, err.Error())
+		return
+	}
+	response.Success(c, gin.H{"function_calling": true})
+}

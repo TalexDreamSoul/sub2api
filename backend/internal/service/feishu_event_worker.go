@@ -111,10 +111,18 @@ func (s *FeishuNotificationService) queueFeishuEventReply(ctx context.Context, r
 	if err != nil {
 		return "", err
 	}
-	if isFeishuNotificationCommand(content.Text) {
+	input := normalizeFeishuNaturalCommand(content.Text)
+	if isFeishuNotificationCommand(input) {
 		return s.enqueueFeishuBotCard(ctx, receipt, binding.UserID, s.feishuNotificationToggleCard(ctx, binding.NotificationEnabled))
 	}
-	reply, err := s.renderBotReply(ctx, binding, content.Text)
+	if isFeishuAPIKeyRequestCommand(input) {
+		card, cardErr := s.buildFeishuAPIKeyRequestCard(ctx, binding)
+		if cardErr != nil {
+			return "", cardErr
+		}
+		return s.enqueueFeishuBotCard(ctx, receipt, binding.UserID, card)
+	}
+	reply, err := s.renderBotReply(ctx, binding, input)
 	if err != nil {
 		return "", err
 	}

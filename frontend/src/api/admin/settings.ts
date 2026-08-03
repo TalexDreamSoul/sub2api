@@ -1065,6 +1065,57 @@ export interface FeishuBoundUser {
   username: string;
 }
 
+export interface FeishuAssistantConfig {
+  enabled: boolean;
+  api_key_id: number;
+  api_key_hint?: string;
+  model: string;
+  daily_digest_enabled: boolean;
+  daily_digest_time: string;
+  api_key_request_mode: "disabled" | "manual" | "auto";
+  default_group_id: number;
+  max_active_keys: number;
+}
+
+export interface FeishuAPIKeyRequest {
+  id: number;
+  user_id: number;
+  requested_group_id: number;
+  requested_name: string;
+  status: string;
+  api_key_id?: number;
+  reviewed_by?: number;
+  review_note?: string;
+  created_at: string;
+  updated_at: string;
+  decided_at?: string;
+}
+
+export async function getFeishuAssistantConfig(): Promise<FeishuAssistantConfig> {
+  const { data } = await apiClient.get<FeishuAssistantConfig>("/admin/settings/feishu-assistant/config");
+  return data;
+}
+
+export async function updateFeishuAssistantConfig(config: FeishuAssistantConfig): Promise<FeishuAssistantConfig> {
+  const { data } = await apiClient.put<FeishuAssistantConfig>("/admin/settings/feishu-assistant/config", config);
+  return data;
+}
+
+export async function testFeishuAssistantModel(): Promise<{ function_calling: boolean }> {
+  const { data } = await apiClient.post<{ function_calling: boolean }>("/admin/settings/feishu-assistant/test");
+  return data;
+}
+
+export async function listFeishuAPIKeyRequests(status = "pending", limit = 100): Promise<FeishuAPIKeyRequest[]> {
+  const { data } = await apiClient.get<FeishuAPIKeyRequest[]>("/admin/settings/feishu-assistant/api-key-requests", { params: { status: status || undefined, limit } });
+  return data;
+}
+
+export async function decideFeishuAPIKeyRequest(id: number, approve: boolean, note = ""): Promise<FeishuAPIKeyRequest> {
+  const { data } = await apiClient.post<FeishuAPIKeyRequest>(`/admin/settings/feishu-assistant/api-key-requests/${id}/decision`, { approve, note });
+  return data;
+}
+
 export async function listFeishuBoundUsers(search = "", limit = 30): Promise<FeishuBoundUser[]> {
   const { data } = await apiClient.get<FeishuBoundUser[]>(
     "/admin/settings/feishu-notification/users",
@@ -1638,6 +1689,11 @@ export const settingsAPI = {
   listFeishuBoundUsers,
   listFeishuDeliveries,
   sendFeishuAdminMessage,
+  getFeishuAssistantConfig,
+  updateFeishuAssistantConfig,
+  testFeishuAssistantModel,
+  listFeishuAPIKeyRequests,
+  decideFeishuAPIKeyRequest,
   getEmailTemplates,
   getEmailTemplate,
   updateEmailTemplate,

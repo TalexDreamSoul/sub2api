@@ -53,9 +53,29 @@ func (s *FeishuNotificationService) handleFeishuCardAction(ctx context.Context, 
 	if err := json.Unmarshal(receipt.Payload, &payload); err != nil {
 		return "", err
 	}
-	if strings.TrimSpace(fmt.Sprint(payload.Event.Action.Value["action"])) != "notification_toggle" {
+	action := strings.TrimSpace(fmt.Sprint(payload.Event.Action.Value["action"]))
+	if action != "notification_toggle" && action != "api_key_request" {
 		return "ignored", nil
 	}
+	reader, ok := s.bindingRepo.(feishuBindingByOpenIDRepository)
+	if !ok {
+		return "", fmt.Errorf("feishu open_id binding lookup is unavailable")
+	}
+	binding, err := reader.GetFeishuBindingByOpenID(ctx, receipt.AppID, receipt.TenantKey, receipt.SenderOpenID, FeishuIdentityPurposeNotify)
+	if errors.Is(err, ErrFeishuNotificationNotBound) {
+		return s.enqueueFeishuBotReply(ctx, receipt, 0, "尚未绑定本站账户，无法执行该操作。")
+	}
+	if err != nil {
+		return "", err
+	}
+	if action == "api_key_request" {
+		groupID, err := strconv.ParseInt(strings.TrimSpace(fmt.Sprint(payload.Event.Action.Value["group_id"])), 10, 64)
+		if err != nil || groupID <= 0 {
+			return s.enqueueFeishuBotReply(ctx, receipt, binding.UserID, "API Key 申请参数无效。")
+		}
+		return s.handleFeishuAPIKeyRequestAction(ctx, receipt, binding, groupID)
+	}
+
 	var enabled bool
 	switch value := payload.Event.Action.Value["enabled"].(type) {
 	case bool:
@@ -68,17 +88,6 @@ func (s *FeishuNotificationService) handleFeishuCardAction(ctx context.Context, 
 		enabled = parsed
 	default:
 		return "ignored", nil
-	}
-	reader, ok := s.bindingRepo.(feishuBindingByOpenIDRepository)
-	if !ok {
-		return "", fmt.Errorf("feishu open_id binding lookup is unavailable")
-	}
-	binding, err := reader.GetFeishuBindingByOpenID(ctx, receipt.AppID, receipt.TenantKey, receipt.SenderOpenID, FeishuIdentityPurposeNotify)
-	if errors.Is(err, ErrFeishuNotificationNotBound) {
-		return s.enqueueFeishuBotReply(ctx, receipt, 0, "尚未绑定本站账户，无法修改通知设置。")
-	}
-	if err != nil {
-		return "", err
 	}
 	status, err := s.SetEnabled(ctx, binding.UserID, enabled)
 	if err != nil {

@@ -62,8 +62,8 @@ type feishuEventEnvelope struct {
 }
 
 func (s *FeishuNotificationService) VerifyAndReceiveEvent(ctx context.Context, headers FeishuEventHeaders, body []byte) (FeishuEventAcceptResult, error) {
-	if s == nil || s.eventRepo == nil {
-		return FeishuEventAcceptResult{}, fmt.Errorf("feishu event repository is unavailable")
+	if s == nil {
+		return FeishuEventAcceptResult{}, fmt.Errorf("feishu notification service is unavailable")
 	}
 	cfg, err := s.GetConfig(ctx)
 	if err != nil || !cfg.Enabled || cfg.AppID == "" || cfg.VerificationToken == "" {
@@ -72,6 +72,24 @@ func (s *FeishuNotificationService) VerifyAndReceiveEvent(ctx context.Context, h
 	if len(body) == 0 || len(body) > 1<<20 {
 		return FeishuEventAcceptResult{}, ErrFeishuEventInvalid
 	}
+
+	var encrypted feishuEventEnvelope
+	if err := json.Unmarshal(body, &encrypted); err != nil {
+		return FeishuEventAcceptResult{}, ErrFeishuEventInvalid
+	}
+	// Feishu's initial URL verification request is an unencrypted challenge and
+	// may not carry X-Lark signature headers even when an Encrypt Key is already
+	// configured. The verification token still authenticates this one-shot
+	// handshake, so validate it before requiring signed event delivery.
+	if encrypted.Encrypt == "" && (encrypted.Challenge != "" || encrypted.Type == "url_verification") {
+		if encrypted.Challenge == "" || subtle.ConstantTimeCompare([]byte(strings.TrimSpace(encrypted.Token)), []byte(cfg.VerificationToken)) != 1 {
+			return FeishuEventAcceptResult{}, ErrFeishuEventUnauthorized
+		}
+		return FeishuEventAcceptResult{Challenge: encrypted.Challenge}, nil
+	}
+	if s.eventRepo == nil {
+		return FeishuEventAcceptResult{}, fmt.Errorf("feishu event repository is unavailable")
+	}
 	if cfg.EncryptKey != "" {
 		if err := verifyFeishuEventSignature(headers, cfg.EncryptKey, body, time.Now()); err != nil {
 			return FeishuEventAcceptResult{}, err
@@ -79,10 +97,6 @@ func (s *FeishuNotificationService) VerifyAndReceiveEvent(ctx context.Context, h
 	}
 
 	plainBody := body
-	var encrypted feishuEventEnvelope
-	if err := json.Unmarshal(body, &encrypted); err != nil {
-		return FeishuEventAcceptResult{}, ErrFeishuEventInvalid
-	}
 	if encrypted.Encrypt != "" {
 		if cfg.EncryptKey == "" {
 			return FeishuEventAcceptResult{}, ErrFeishuEventUnauthorized

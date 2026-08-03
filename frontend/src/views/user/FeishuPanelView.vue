@@ -128,10 +128,14 @@
           </div>
         </div>
 
-        <div class="grid grid-cols-2 gap-3">
+        <div class="grid gap-3 sm:grid-cols-3">
           <router-link to="/dashboard" class="btn btn-primary justify-center">
             <Icon name="grid" size="sm" class="mr-1" />
             {{ localText('仪表盘', 'Dashboard') }}
+          </router-link>
+          <router-link to="/keys" class="btn btn-secondary justify-center">
+            <Icon name="key" size="sm" class="mr-1" />
+            {{ localText('API Key', 'API keys') }}
           </router-link>
           <router-link to="/profile" class="btn btn-secondary justify-center">
             <Icon name="cog" size="sm" class="mr-1" />
@@ -183,6 +187,7 @@ const preferenceItems = computed(() => [
   { key: 'quota' as const, label: localText('额度阈值', 'Quota thresholds') },
   { key: 'security' as const, label: localText('安全与风控', 'Security and moderation') },
   { key: 'channel' as const, label: localText('渠道故障与恢复', 'Channel incidents') },
+  { key: 'daily_digest' as const, label: localText('每日使用与额度日报', 'Daily usage and quota digest') },
 ])
 
 const notificationBadge = computed(() => {
@@ -279,7 +284,7 @@ async function toggleNotification() {
   }
 }
 
-async function togglePreference(category: 'balance' | 'subscription' | 'quota' | 'security' | 'channel', event: Event) {
+async function togglePreference(category: 'balance' | 'subscription' | 'quota' | 'security' | 'channel' | 'daily_digest', event: Event) {
   if (!notificationStatus.value?.bound) return
   savingNotification.value = true
   try {

@@ -58,6 +58,9 @@ type feishuEventEnvelope struct {
 				OpenID string `json:"open_id"`
 			} `json:"operator_id"`
 		} `json:"operator"`
+		OperatorID struct {
+			OpenID string `json:"open_id"`
+		} `json:"operator_id"`
 	} `json:"event"`
 }
 
@@ -124,7 +127,7 @@ func (s *FeishuNotificationService) VerifyAndReceiveEvent(ctx context.Context, h
 		return FeishuEventAcceptResult{}, ErrFeishuEventInvalid
 	}
 	hash := sha256.Sum256(plainBody)
-	senderOpenID := firstNonEmpty(event.Event.Sender.SenderID.OpenID, event.Event.Operator.OpenID, event.Event.Operator.OperatorID.OpenID)
+	senderOpenID := firstNonEmpty(event.Event.Sender.SenderID.OpenID, event.Event.Operator.OpenID, event.Event.Operator.OperatorID.OpenID, event.Event.OperatorID.OpenID)
 	_, inserted, err := s.eventRepo.Receive(ctx, FeishuEventReceiptInput{
 		AppID: cfg.AppID, EventID: event.Header.EventID, EventType: event.Header.EventType,
 		TenantKey: event.Header.TenantKey, SenderOpenID: senderOpenID,

@@ -66,6 +66,9 @@ func (s *FeishuNotificationService) processFeishuEvent(parent context.Context, r
 }
 
 func (s *FeishuNotificationService) queueFeishuEventReply(ctx context.Context, receipt *FeishuEventReceipt) (string, error) {
+	if status, handled, err := s.handleFeishuP2PChatEntered(ctx, receipt); handled {
+		return status, err
+	}
 	if status, handled, err := s.handleFeishuChatLifecycleEvent(ctx, receipt); handled {
 		return status, err
 	}
@@ -99,9 +102,9 @@ func (s *FeishuNotificationService) queueFeishuEventReply(ctx context.Context, r
 	}
 	if payload.Event.Message.MessageType != "text" {
 		if payload.Event.Message.ChatType == "group" {
-			return s.enqueueFeishuChatReply(ctx, receipt, payload.Event.Message.ChatID, "暂不支持该消息", "群助手目前仅处理文本命令。发送 /菜单 查看可用命令。")
+			return s.enqueueFeishuChatReply(ctx, receipt, payload.Event.Message.ChatID, "暂不支持 / Unsupported", "群助手目前仅处理文本命令。发送 /菜单 查看功能。\nThe group assistant currently accepts text commands only. Send /menu to view actions.")
 		}
-		return s.enqueueFeishuBotReply(ctx, receipt, 0, "目前仅支持文本命令。发送 /帮助 查看可用命令。")
+		return s.enqueueFeishuBotReply(ctx, receipt, 0, "目前仅支持文本命令。发送 /菜单 查看功能。\nText commands are supported. Send /menu to view actions.")
 	}
 	var content struct {
 		Text string `json:"text"`
@@ -125,11 +128,15 @@ func (s *FeishuNotificationService) queueFeishuEventReply(ctx context.Context, r
 		return "", err
 	}
 	input := normalizeFeishuNaturalCommand(content.Text)
+	language := feishuCommandLanguage(input)
+	if isFeishuBotMenuCommand(input) {
+		return s.enqueueFeishuBotCard(ctx, receipt, binding.UserID, s.feishuBotMenuCard(ctx, language))
+	}
 	if isFeishuNotificationCommand(input) {
-		return s.enqueueFeishuBotCard(ctx, receipt, binding.UserID, s.feishuNotificationToggleCard(ctx, binding.NotificationEnabled))
+		return s.enqueueFeishuBotCard(ctx, receipt, binding.UserID, s.feishuNotificationToggleCard(ctx, binding.NotificationEnabled, language))
 	}
 	if isFeishuAPIKeyRequestCommand(input) {
-		card, cardErr := s.buildFeishuAPIKeyRequestCard(ctx, binding)
+		card, cardErr := s.buildFeishuAPIKeyRequestCard(ctx, binding, language)
 		if cardErr != nil {
 			return "", cardErr
 		}
@@ -145,10 +152,10 @@ func (s *FeishuNotificationService) queueFeishuEventReply(ctx context.Context, r
 func (s *FeishuNotificationService) enqueueFeishuBotReply(ctx context.Context, receipt *FeishuEventReceipt, userID int64, text string) (string, error) {
 	card := map[string]any{
 		"config": map[string]any{"wide_screen_mode": true},
-		"header": map[string]any{"title": map[string]any{"tag": "plain_text", "content": "账户助手"}, "template": "blue"},
+		"header": map[string]any{"title": map[string]any{"tag": "plain_text", "content": "账户助手 / Account Assistant"}, "template": "blue"},
 		"elements": []any{
 			map[string]any{"tag": "div", "text": map[string]any{"tag": "plain_text", "content": strings.TrimSpace(text)}},
-			s.feishuPanelActionElement(ctx, "打开面板", ""),
+			s.feishuPanelActionElement(ctx, "打开面板 / Open panel", ""),
 		},
 	}
 	return s.enqueueFeishuBotCard(ctx, receipt, userID, card)

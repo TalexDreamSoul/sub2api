@@ -31,7 +31,7 @@
           <label class="field md:col-span-2">
             <span>{{ tx('事件回调地址', 'Event callback URL') }}</span>
             <input :value="eventCallbackURL" class="input font-mono text-xs" readonly />
-            <small class="text-left">{{ tx('群助手需订阅：接收消息、机器人进群/退群、群解散、群信息变更和机器人禁言事件。', 'Group assistant subscriptions: message received, bot added/removed, chat disbanded/updated, and bot muted events.') }}</small>
+            <small class="text-left">{{ tx('必须订阅 im.message.receive_v1，并开通“读取用户发给机器人的单聊消息”和“接收群聊中 @ 机器人消息”权限；修改后需发布应用版本。群助手另需机器人进群/退群、群解散、群信息变更和机器人禁言事件。', 'Subscribe to im.message.receive_v1 and grant “Read direct messages sent to bot” plus “Receive users’ mentions”; publish a new app version after changes. Group assistant lifecycle also uses bot added/removed, chat disbanded/updated, and bot muted events.') }}</small>
           </label>
           <label class="field md:col-span-2"><span>{{ tx('面板地址', 'Panel URL') }}</span><input v-model.trim="form.panelUrl" class="input" /></label>
         </div>

@@ -292,31 +292,31 @@ func renderFeishuChatBindingStatus(binding *FeishuChatBinding) string {
 	if binding == nil {
 		return "未配置"
 	}
-	text := fmt.Sprintf("用途：%s\n状态：%s", feishuChatKindLabel(binding.Kind), binding.Status)
+	text := fmt.Sprintf("用途 / Purpose：%s\n状态 / Status：%s", feishuChatKindLabel(binding.Kind), binding.Status)
 	if binding.Sub2APIGroupID != nil {
 		name := strings.TrimSpace(binding.Sub2APIGroupName)
 		if name == "" {
 			name = fmt.Sprintf("分组 #%d", *binding.Sub2APIGroupID)
 		}
-		text += "\n关联分组：" + name
+		text += "\n关联分组 / Linked group：" + name
 	}
-	incident := "关闭"
+	incident := "关闭 / Off"
 	if binding.IncidentNotificationsEnabled {
-		incident = "开启"
+		incident = "开启 / On"
 	}
-	digest := "关闭"
+	digest := "关闭 / Off"
 	if binding.DailyDigestEnabled {
-		digest = "开启"
+		digest = "开启 / On"
 	}
-	return text + "\n故障通知：" + incident + "\n群日报：" + digest
+	return text + "\n故障通知 / Incident alerts：" + incident + "\n群日报 / Group digest：" + digest
 }
 
 func feishuGroupHelpText(binding *FeishuChatBinding) string {
-	base := "个人查询（结果仅私聊本人）：\n/概览  /余额  /额度  /订阅  /key  /日报\n\n群查询：\n/群状态  /群概览  /渠道状态"
+	base := "个人查询（结果仅私聊本人）/ Personal (direct reply only)：\n/概览 /overview  /余额 /balance  /额度 /quota\n/订阅 /subscriptions  /key /keys  /日报 /daily\n\n群查询 / Group：\n/群状态 /group-status  /群概览 /group-usage  /渠道状态 /channel-status"
 	if binding != nil && binding.Kind == FeishuChatKindManagement {
-		base += "  /系统状态"
+		base += "  /系统状态 /system-status"
 	}
-	return base + "\n\n群配置（仅授权管理员）：\n/绑定用户群 <分组ID>\n/绑定维护群 <分组ID>\n/绑定管理群\n/绑定通知群\n/解绑群"
+	return base + "\n\n群配置（仅授权管理员）/ Configuration (authorized admins only)：\n/绑定用户群 <group ID>\n/绑定维护群 <group ID>\n/绑定管理群\n/绑定通知群\n/解绑群"
 }
 
 func feishuGroupMenuCard(binding *FeishuChatBinding) map[string]any {
@@ -326,33 +326,33 @@ func feishuGroupMenuCard(binding *FeishuChatBinding) map[string]any {
 	if binding != nil && binding.Status == FeishuChatStatusActive {
 		chatID := binding.ChatID
 		groupActions := []any{
-			feishuGroupMenuButton("群状态", "/群状态", chatID, "default"),
+			feishuGroupMenuButton("群状态 / Group status", "/群状态", chatID, "default"),
 		}
 		if binding.Sub2APIGroupID != nil {
-			groupActions = append(groupActions, feishuGroupMenuButton("今日群用量", "/群概览", chatID, "primary"))
+			groupActions = append(groupActions, feishuGroupMenuButton("今日群用量 / Group usage", "/群概览", chatID, "primary"))
 		}
 		if binding.Kind == FeishuChatKindOperations || binding.Kind == FeishuChatKindManagement || binding.Kind == FeishuChatKindNotifications {
-			groupActions = append(groupActions, feishuGroupMenuButton("渠道状态", "/渠道状态", chatID, "default"))
+			groupActions = append(groupActions, feishuGroupMenuButton("渠道状态 / Channels", "/渠道状态", chatID, "default"))
 		}
 		if binding.Kind == FeishuChatKindManagement {
-			groupActions = append(groupActions, feishuGroupMenuButton("系统状态", "/系统状态", chatID, "default"))
+			groupActions = append(groupActions, feishuGroupMenuButton("系统状态 / System", "/系统状态", chatID, "default"))
 		}
 		elements = append(elements,
-			map[string]any{"tag": "div", "text": map[string]any{"tag": "plain_text", "content": "群功能"}},
+			map[string]any{"tag": "div", "text": map[string]any{"tag": "plain_text", "content": "群功能 / Group actions"}},
 			map[string]any{"tag": "action", "actions": groupActions},
-			map[string]any{"tag": "div", "text": map[string]any{"tag": "plain_text", "content": "个人查询（结果仅私聊本人）"}},
+			map[string]any{"tag": "div", "text": map[string]any{"tag": "plain_text", "content": "个人查询（仅私聊本人）/ Personal actions (direct reply only)"}},
 			map[string]any{"tag": "action", "actions": []any{
-				feishuGroupMenuButton("账户概览", "/概览", chatID, "default"),
-				feishuGroupMenuButton("订阅额度", "/额度", chatID, "default"),
-				feishuGroupMenuButton("今日使用", "/日报", chatID, "default"),
+				feishuGroupMenuButton("账户概览 / Overview", "/概览", chatID, "default"),
+				feishuGroupMenuButton("订阅额度 / Quotas", "/额度", chatID, "default"),
+				feishuGroupMenuButton("今日使用 / Today", "/日报", chatID, "default"),
 			}},
 		)
 	} else {
-		elements = append(elements, map[string]any{"tag": "div", "text": map[string]any{"tag": "plain_text", "content": "请由后台已授权管理员先发送群绑定命令。"}})
+		elements = append(elements, map[string]any{"tag": "div", "text": map[string]any{"tag": "plain_text", "content": "请由后台已授权管理员先发送群绑定命令。\nAsk an authorized administrator to configure this chat first."}})
 	}
 	return map[string]any{
 		"config":   map[string]any{"wide_screen_mode": true},
-		"header":   map[string]any{"title": map[string]any{"tag": "plain_text", "content": "Sub2API 群助手菜单"}, "template": "blue"},
+		"header":   map[string]any{"title": map[string]any{"tag": "plain_text", "content": "Sub2API 群助手 / Group Assistant"}, "template": "blue"},
 		"elements": elements,
 	}
 }
@@ -380,7 +380,7 @@ func isFeishuGroupMenuAction(command string) bool {
 func renderFeishuGroupDigestCard(day time.Time, binding FeishuChatBinding, text string) map[string]any {
 	return map[string]any{
 		"config":   map[string]any{"wide_screen_mode": true},
-		"header":   map[string]any{"title": map[string]any{"tag": "plain_text", "content": day.Format("2006-01-02") + " 群日报"}, "template": "blue"},
+		"header":   map[string]any{"title": map[string]any{"tag": "plain_text", "content": day.Format("2006-01-02") + " 群日报 / Group digest"}, "template": "blue"},
 		"elements": []any{map[string]any{"tag": "div", "text": map[string]any{"tag": "plain_text", "content": text}}},
 	}
 }

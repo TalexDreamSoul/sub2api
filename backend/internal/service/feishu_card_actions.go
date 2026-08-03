@@ -18,26 +18,30 @@ func isFeishuNotificationCommand(value string) bool {
 	}
 }
 
-func (s *FeishuNotificationService) feishuNotificationToggleCard(ctx context.Context, enabled bool) map[string]any {
-	state, command, buttonType := "已关闭", "开启自动通知", "primary"
+func (s *FeishuNotificationService) feishuNotificationToggleCard(ctx context.Context, enabled bool, languages ...string) map[string]any {
+	language := feishuLanguageChinese
+	if len(languages) > 0 {
+		language = normalizeFeishuLanguage(languages[0])
+	}
+	state, command, buttonType := localizeFeishu("已关闭", "Disabled", language), localizeFeishu("开启自动通知", "Enable notifications", language), "primary"
 	if enabled {
-		state, command, buttonType = "已开启", "关闭自动通知", "danger"
+		state, command, buttonType = localizeFeishu("已开启", "Enabled", language), localizeFeishu("关闭自动通知", "Disable notifications", language), "danger"
 	}
 	return map[string]any{
 		"config": map[string]any{"wide_screen_mode": true},
-		"header": map[string]any{"title": map[string]any{"tag": "plain_text", "content": "通知设置"}, "template": "blue"},
+		"header": map[string]any{"title": map[string]any{"tag": "plain_text", "content": localizeFeishu("通知设置", "Notification settings", language)}, "template": "blue"},
 		"elements": []any{
-			map[string]any{"tag": "div", "text": map[string]any{"tag": "plain_text", "content": "飞书自动通知：" + state}},
+			map[string]any{"tag": "div", "text": map[string]any{"tag": "plain_text", "content": localizeFeishu("飞书自动通知：", "Feishu notifications: ", language) + state}},
 			map[string]any{"tag": "action", "actions": []any{map[string]any{
 				"tag": "button", "type": buttonType,
 				"text":  map[string]any{"tag": "plain_text", "content": command},
-				"value": map[string]any{"action": "notification_toggle", "enabled": !enabled},
+				"value": map[string]any{"action": "notification_toggle", "enabled": !enabled, "language": language},
 				"confirm": map[string]any{
-					"title": map[string]any{"tag": "plain_text", "content": "确认修改通知设置"},
-					"text":  map[string]any{"tag": "plain_text", "content": "确认" + command + "？"},
+					"title": map[string]any{"tag": "plain_text", "content": localizeFeishu("确认修改通知设置", "Confirm notification change", language)},
+					"text":  map[string]any{"tag": "plain_text", "content": localizeFeishu("确认", "Confirm: ", language) + command + "?"},
 				},
 			}}},
-			s.feishuPanelActionElement(ctx, "打开面板", ""),
+			s.feishuPanelActionElement(ctx, localizeFeishu("打开面板", "Open panel", language), ""),
 		},
 	}
 }
@@ -62,7 +66,7 @@ func (s *FeishuNotificationService) handleFeishuCardAction(ctx context.Context, 
 		}
 		return s.handleFeishuGroupMessage(ctx, receipt, chatID, command)
 	}
-	if action != "notification_toggle" && action != "api_key_request" {
+	if action != "notification_toggle" && action != "api_key_request" && action != "bot_menu" && action != "bot_command" {
 		return "ignored", nil
 	}
 	reader, ok := s.bindingRepo.(feishuBindingByOpenIDRepository)
@@ -76,12 +80,37 @@ func (s *FeishuNotificationService) handleFeishuCardAction(ctx context.Context, 
 	if err != nil {
 		return "", err
 	}
+	language := normalizeFeishuLanguage(strings.TrimSpace(fmt.Sprint(payload.Event.Action.Value["language"])))
+	if action == "bot_menu" {
+		return s.enqueueFeishuBotCard(ctx, receipt, binding.UserID, s.feishuBotMenuCard(ctx, language))
+	}
+	if action == "bot_command" {
+		command := normalizeFeishuBotCommand(strings.TrimSpace(fmt.Sprint(payload.Event.Action.Value["command"])))
+		if !isFeishuBotMenuActionCommand(command) {
+			return "ignored", nil
+		}
+		if isFeishuNotificationCommand(command) {
+			return s.enqueueFeishuBotCard(ctx, receipt, binding.UserID, s.feishuNotificationToggleCard(ctx, binding.NotificationEnabled, language))
+		}
+		if isFeishuAPIKeyRequestCommand(command) {
+			card, cardErr := s.buildFeishuAPIKeyRequestCard(ctx, binding, language)
+			if cardErr != nil {
+				return "", cardErr
+			}
+			return s.enqueueFeishuBotCard(ctx, receipt, binding.UserID, card)
+		}
+		reply, renderErr := s.renderBotReplyLocalized(ctx, binding, command, language)
+		if renderErr != nil {
+			return "", renderErr
+		}
+		return s.enqueueFeishuBotReply(ctx, receipt, binding.UserID, reply)
+	}
 	if action == "api_key_request" {
 		groupID, err := strconv.ParseInt(strings.TrimSpace(fmt.Sprint(payload.Event.Action.Value["group_id"])), 10, 64)
 		if err != nil || groupID <= 0 {
 			return s.enqueueFeishuBotReply(ctx, receipt, binding.UserID, "API Key 申请参数无效。")
 		}
-		return s.handleFeishuAPIKeyRequestAction(ctx, receipt, binding, groupID)
+		return s.handleFeishuAPIKeyRequestAction(ctx, receipt, binding, groupID, language)
 	}
 
 	var enabled bool
@@ -101,5 +130,5 @@ func (s *FeishuNotificationService) handleFeishuCardAction(ctx context.Context, 
 	if err != nil {
 		return "", err
 	}
-	return s.enqueueFeishuBotCard(ctx, receipt, binding.UserID, s.feishuNotificationToggleCard(ctx, status.NotificationEnabled))
+	return s.enqueueFeishuBotCard(ctx, receipt, binding.UserID, s.feishuNotificationToggleCard(ctx, status.NotificationEnabled, language))
 }

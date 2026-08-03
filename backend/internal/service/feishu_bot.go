@@ -9,34 +9,7 @@ import (
 )
 
 func (s *FeishuNotificationService) renderBotReply(ctx context.Context, binding *FeishuUserIdentityBinding, input string) (string, error) {
-	if binding == nil || binding.UserID <= 0 {
-		return "", ErrFeishuNotificationNotBound
-	}
-	command := normalizeFeishuBotCommand(input)
-	switch command {
-	case "/余额", "/balance", "/概览", "/overview":
-		return s.renderFeishuBalance(ctx, binding.UserID)
-	case "/订阅", "/subscription", "/subscriptions":
-		return s.renderFeishuSubscriptions(ctx, binding.UserID, false)
-	case "/额度", "/quota":
-		return s.renderFeishuSubscriptions(ctx, binding.UserID, true)
-	case "/key", "/keys", "/apikey":
-		return s.renderFeishuAPIKeys(ctx, binding.UserID)
-	case "/日报", "/daily", "/排行", "/rank":
-		return s.renderFeishuDailyUsage(ctx, binding.UserID)
-	case "/通知", "/notification", "/notifications":
-		state := "已关闭"
-		if binding.NotificationEnabled {
-			state = "已开启"
-		}
-		return "飞书自动通知：" + state + "\n如需修改，请打开账户面板。", nil
-	case "/渠道", "/channel", "/channels":
-		return s.renderFeishuChannels(ctx)
-	case "/帮助", "/help", "help":
-		return feishuBotHelpText(), nil
-	default:
-		return s.renderFeishuAssistantReply(ctx, binding, input)
-	}
+	return s.renderBotReplyLocalized(ctx, binding, input, feishuCommandLanguage(input))
 }
 
 func normalizeFeishuNaturalCommand(value string) string {
@@ -67,8 +40,16 @@ func normalizeFeishuNaturalCommand(value string) string {
 	}
 }
 
-func feishuBotHelpText() string {
-	return "可用命令：\n/概览  /余额  /额度  /订阅  /key\n/申请key  /日报  /排行  /渠道  /通知\n\n也可以直接询问账户、订阅、额度和今日使用情况。机器人只展示当前绑定账户的脱敏信息。"
+func feishuBotHelpText(languages ...string) string {
+	language := feishuLanguageChinese
+	if len(languages) > 0 {
+		language = normalizeFeishuLanguage(languages[0])
+	}
+	return localizeFeishu(
+		"可用命令：\n/菜单  /概览  /余额  /额度  /订阅  /key\n/申请key  /日报  /排行  /渠道  /通知\n\n也可以点击菜单按钮。个人数据只会发送给当前绑定账户。",
+		"Commands:\n/menu  /overview  /balance  /quota  /subscriptions  /keys\n/request-key  /daily  /rank  /channels  /notifications\n\nYou can also use the menu buttons. Personal data is only sent to the linked account.",
+		language,
+	)
 }
 
 func normalizeFeishuBotCommand(value string) string {

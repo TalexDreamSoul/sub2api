@@ -66,6 +66,9 @@ func (s *FeishuNotificationService) processFeishuEvent(parent context.Context, r
 }
 
 func (s *FeishuNotificationService) queueFeishuEventReply(ctx context.Context, receipt *FeishuEventReceipt) (string, error) {
+	if status, handled, err := s.handleFeishuChatLifecycleEvent(ctx, receipt); handled {
+		return status, err
+	}
 	if receipt.EventType == "card.action.trigger" || receipt.EventType == "card.action.trigger_v1" {
 		return s.handleFeishuCardAction(ctx, receipt)
 	}
@@ -78,6 +81,7 @@ func (s *FeishuNotificationService) queueFeishuEventReply(ctx context.Context, r
 				SenderType string `json:"sender_type"`
 			} `json:"sender"`
 			Message struct {
+				ChatID      string `json:"chat_id"`
 				ChatType    string `json:"chat_type"`
 				MessageType string `json:"message_type"`
 				Content     string `json:"content"`
@@ -87,10 +91,16 @@ func (s *FeishuNotificationService) queueFeishuEventReply(ctx context.Context, r
 	if err := json.Unmarshal(receipt.Payload, &payload); err != nil {
 		return "", err
 	}
-	if payload.Event.Message.ChatType != "p2p" || payload.Event.Sender.SenderType == "app" {
+	if payload.Event.Sender.SenderType == "app" {
+		return "ignored", nil
+	}
+	if payload.Event.Message.ChatType != "p2p" && payload.Event.Message.ChatType != "group" {
 		return "ignored", nil
 	}
 	if payload.Event.Message.MessageType != "text" {
+		if payload.Event.Message.ChatType == "group" {
+			return s.enqueueFeishuChatReply(ctx, receipt, payload.Event.Message.ChatID, "暂不支持该消息", "群助手目前仅处理文本命令。发送 /菜单 查看可用命令。")
+		}
 		return s.enqueueFeishuBotReply(ctx, receipt, 0, "目前仅支持文本命令。发送 /帮助 查看可用命令。")
 	}
 	var content struct {
@@ -98,6 +108,9 @@ func (s *FeishuNotificationService) queueFeishuEventReply(ctx context.Context, r
 	}
 	if err := json.Unmarshal([]byte(payload.Event.Message.Content), &content); err != nil {
 		return "", err
+	}
+	if payload.Event.Message.ChatType == "group" {
+		return s.handleFeishuGroupMessage(ctx, receipt, payload.Event.Message.ChatID, content.Text)
 	}
 
 	reader, ok := s.bindingRepo.(feishuBindingByOpenIDRepository)

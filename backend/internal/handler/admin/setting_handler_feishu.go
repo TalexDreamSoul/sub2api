@@ -196,3 +196,112 @@ func (h *SettingHandler) TestFeishuAssistantModel(c *gin.Context) {
 	}
 	response.Success(c, gin.H{"function_calling": true})
 }
+
+type feishuAssistantAdminRequest struct {
+	UserID int64 `json:"user_id"`
+}
+
+func (h *SettingHandler) ListFeishuAssistantAdmins(c *gin.Context) {
+	if h.feishuNotificationService == nil {
+		response.InternalError(c, "feishu assistant service is not configured")
+		return
+	}
+	items, err := h.feishuNotificationService.ListFeishuAssistantAdmins(c.Request.Context())
+	if err != nil {
+		response.ErrorFrom(c, err)
+		return
+	}
+	response.Success(c, items)
+}
+
+func (h *SettingHandler) AddFeishuAssistantAdmin(c *gin.Context) {
+	if h.feishuNotificationService == nil {
+		response.InternalError(c, "feishu assistant service is not configured")
+		return
+	}
+	var req feishuAssistantAdminRequest
+	if err := c.ShouldBindJSON(&req); err != nil || req.UserID <= 0 {
+		response.BadRequest(c, "valid user_id is required")
+		return
+	}
+	subject, ok := middleware2.GetAuthSubjectFromContext(c)
+	if !ok || subject.UserID <= 0 {
+		response.Unauthorized(c, "Administrator session is required")
+		return
+	}
+	if err := h.feishuNotificationService.AddFeishuAssistantAdmin(c.Request.Context(), subject.UserID, req.UserID); err != nil {
+		response.ErrorFrom(c, err)
+		return
+	}
+	response.Success(c, gin.H{"assigned": true})
+}
+
+func (h *SettingHandler) RemoveFeishuAssistantAdmin(c *gin.Context) {
+	if h.feishuNotificationService == nil {
+		response.InternalError(c, "feishu assistant service is not configured")
+		return
+	}
+	userID, err := strconv.ParseInt(c.Param("user_id"), 10, 64)
+	if err != nil || userID <= 0 {
+		response.BadRequest(c, "invalid user id")
+		return
+	}
+	if err := h.feishuNotificationService.RemoveFeishuAssistantAdmin(c.Request.Context(), userID); err != nil {
+		response.ErrorFrom(c, err)
+		return
+	}
+	response.Success(c, gin.H{"removed": true})
+}
+
+func (h *SettingHandler) ListFeishuChatBindings(c *gin.Context) {
+	if h.feishuNotificationService == nil {
+		response.InternalError(c, "feishu assistant service is not configured")
+		return
+	}
+	items, err := h.feishuNotificationService.ListFeishuChatBindings(c.Request.Context())
+	if err != nil {
+		response.ErrorFrom(c, err)
+		return
+	}
+	response.Success(c, items)
+}
+
+type updateFeishuChatBindingRequest struct {
+	ChatName                     string `json:"chat_name"`
+	Kind                         string `json:"kind"`
+	Sub2APIGroupID               int64  `json:"sub2api_group_id"`
+	IncidentNotificationsEnabled bool   `json:"incident_notifications_enabled"`
+	DailyDigestEnabled           bool   `json:"daily_digest_enabled"`
+}
+
+func (h *SettingHandler) UpdateFeishuChatBinding(c *gin.Context) {
+	if h.feishuNotificationService == nil {
+		response.InternalError(c, "feishu assistant service is not configured")
+		return
+	}
+	id, err := strconv.ParseInt(c.Param("id"), 10, 64)
+	if err != nil || id <= 0 {
+		response.BadRequest(c, "invalid chat binding id")
+		return
+	}
+	var req updateFeishuChatBindingRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		response.BadRequest(c, "Invalid request: "+err.Error())
+		return
+	}
+	subject, ok := middleware2.GetAuthSubjectFromContext(c)
+	if !ok || subject.UserID <= 0 {
+		response.Unauthorized(c, "Administrator session is required")
+		return
+	}
+	item, err := h.feishuNotificationService.UpdateFeishuChatBinding(c.Request.Context(), subject.UserID, service.ConfigureFeishuChatInput{
+		ID: id, ChatName: req.ChatName, Kind: req.Kind, Sub2APIGroupID: req.Sub2APIGroupID,
+		IncidentNotificationsEnabled: req.IncidentNotificationsEnabled,
+		DailyDigestEnabled:           req.DailyDigestEnabled,
+	})
+	if err != nil {
+		response.ErrorFrom(c, err)
+		return
+	}
+	response.Success(c, item)
+}

@@ -153,6 +153,9 @@ type FeishuNotificationService struct {
 	apiKeyRequestRepo  FeishuAPIKeyRequestRepository
 	apiKeyService      *APIKeyService
 	dailyUsageRepo     feishuDailyDigestUsageReader
+	chatRepo           FeishuChatBindingRepository
+	groupRepo          GroupRepository
+	usageLogRepo       UsageLogRepository
 	dailyDigestMu      sync.Mutex
 	dailyDigestDate    string
 
@@ -498,8 +501,16 @@ func (s *FeishuNotificationService) sendInteractiveCardWithPreferenceAndUUID(ctx
 }
 
 func (s *FeishuNotificationService) sendInteractiveCardToOpenIDWithUUID(ctx context.Context, cfg FeishuNotificationConfig, userID int64, openID string, card map[string]any, messageUUID string) (string, error) {
-	openID = strings.TrimSpace(openID)
-	if openID == "" {
+	return s.sendInteractiveCardToRecipientWithUUID(ctx, cfg, userID, openID, "open_id", card, messageUUID)
+}
+
+func (s *FeishuNotificationService) sendInteractiveCardToChatWithUUID(ctx context.Context, cfg FeishuNotificationConfig, chatID string, card map[string]any, messageUUID string) (string, error) {
+	return s.sendInteractiveCardToRecipientWithUUID(ctx, cfg, 0, chatID, "chat_id", card, messageUUID)
+}
+
+func (s *FeishuNotificationService) sendInteractiveCardToRecipientWithUUID(ctx context.Context, cfg FeishuNotificationConfig, userID int64, recipientID, recipientType string, card map[string]any, messageUUID string) (string, error) {
+	recipientID = strings.TrimSpace(recipientID)
+	if recipientID == "" {
 		return "", ErrFeishuNotificationNotBound
 	}
 	token, err := s.fetchTenantAccessToken(ctx, cfg)
@@ -510,12 +521,12 @@ func (s *FeishuNotificationService) sendInteractiveCardToOpenIDWithUUID(ctx cont
 	if err != nil {
 		return "", err
 	}
-	messageURL, err := buildFeishuMessageURL(cfg.MessageURL)
+	messageURL, err := buildFeishuMessageURLForType(cfg.MessageURL, recipientType)
 	if err != nil {
 		return "", err
 	}
 	body := map[string]any{
-		"receive_id": openID,
+		"receive_id": recipientID,
 		"msg_type":   "interactive",
 		"content":    string(cardJSON),
 	}
@@ -536,7 +547,7 @@ func (s *FeishuNotificationService) sendInteractiveCardToOpenIDWithUUID(ctx cont
 		return "", err
 	}
 	messageID := firstNonEmpty(getFeishuNotifyJSON(resp.String(), "data.message_id"), getFeishuNotifyJSON(resp.String(), "message_id"))
-	slog.Info("feishu notification sent", "user_id", userID, "app_id", cfg.AppID, "message_id", messageID)
+	slog.Info("feishu notification sent", "user_id", userID, "recipient_type", recipientType, "app_id", cfg.AppID, "message_id", messageID)
 	return messageID, nil
 }
 
@@ -640,14 +651,19 @@ func (s *FeishuNotificationService) cachedTenantToken(cacheKey string, now time.
 }
 
 func buildFeishuMessageURL(raw string) (string, error) {
+	return buildFeishuMessageURLForType(raw, "open_id")
+}
+
+func buildFeishuMessageURLForType(raw, recipientType string) (string, error) {
 	u, err := url.Parse(strings.TrimSpace(raw))
 	if err != nil {
 		return "", err
 	}
-	q := u.Query()
-	if q.Get("receive_id_type") == "" {
-		q.Set("receive_id_type", "open_id")
+	if recipientType != "chat_id" {
+		recipientType = "open_id"
 	}
+	q := u.Query()
+	q.Set("receive_id_type", recipientType)
 	u.RawQuery = q.Encode()
 	return u.String(), nil
 }

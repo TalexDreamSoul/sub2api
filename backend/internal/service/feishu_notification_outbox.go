@@ -24,6 +24,7 @@ type FeishuNotificationOutboxInput struct {
 	OrderingKey     string
 	UserID          int64
 	RecipientOpenID string
+	RecipientChatID string
 	AppID           string
 	Category        string
 	Payload         json.RawMessage
@@ -34,6 +35,7 @@ type FeishuNotificationOutboxItem struct {
 	ID              int64
 	UserID          int64
 	RecipientOpenID string
+	RecipientChatID string
 	AppID           string
 	Category        string
 	Payload         json.RawMessage

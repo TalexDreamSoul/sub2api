@@ -30,12 +30,13 @@ func (r *feishuNotificationOutboxRepository) Enqueue(ctx context.Context, input 
 	var id int64
 	err := r.db.QueryRowContext(ctx, `
 		INSERT INTO feishu_notification_outbox (
-			dedupe_key, ordering_key, user_id, recipient_open_id, app_id, category, payload, created_by
-		) VALUES ($1, NULLIF($2,''), $3, $4, $5, $6, $7, $8)
+			dedupe_key, ordering_key, user_id, recipient_open_id, recipient_chat_id, app_id, category, payload, created_by
+		) VALUES ($1, NULLIF($2,''), $3, NULLIF($4,''), NULLIF($5,''), $6, $7, $8, $9)
 		ON CONFLICT (dedupe_key) DO NOTHING
 		RETURNING id
 	`, strings.TrimSpace(input.DedupeKey), strings.TrimSpace(input.OrderingKey), userID,
-		strings.TrimSpace(input.RecipientOpenID), strings.TrimSpace(input.AppID), strings.TrimSpace(input.Category), input.Payload, input.CreatedBy).Scan(&id)
+		strings.TrimSpace(input.RecipientOpenID), strings.TrimSpace(input.RecipientChatID), strings.TrimSpace(input.AppID),
+		strings.TrimSpace(input.Category), input.Payload, input.CreatedBy).Scan(&id)
 	if err == nil {
 		return id, true, nil
 	}
@@ -85,7 +86,7 @@ func (r *feishuNotificationOutboxRepository) Claim(ctx context.Context, workerID
 		SET status = 'processing', claimed_at = NOW(), claimed_by = $1, updated_at = NOW()
 		FROM candidates AS c
 		WHERE o.id = c.id
-		RETURNING o.id, o.user_id, COALESCE(o.recipient_open_id, ''), o.app_id, o.category, o.payload, o.attempts, o.created_at
+		RETURNING o.id, o.user_id, COALESCE(o.recipient_open_id, ''), COALESCE(o.recipient_chat_id, ''), o.app_id, o.category, o.payload, o.attempts, o.created_at
 	`, strings.TrimSpace(workerID), limit, leaseSeconds)
 	if err != nil {
 		return nil, err
@@ -96,7 +97,7 @@ func (r *feishuNotificationOutboxRepository) Claim(ctx context.Context, workerID
 	for rows.Next() {
 		var item service.FeishuNotificationOutboxItem
 		var userID sql.NullInt64
-		if err := rows.Scan(&item.ID, &userID, &item.RecipientOpenID, &item.AppID, &item.Category, &item.Payload, &item.Attempts, &item.CreatedAt); err != nil {
+		if err := rows.Scan(&item.ID, &userID, &item.RecipientOpenID, &item.RecipientChatID, &item.AppID, &item.Category, &item.Payload, &item.Attempts, &item.CreatedAt); err != nil {
 			return nil, err
 		}
 		if userID.Valid {
@@ -114,7 +115,7 @@ func (r *feishuNotificationOutboxRepository) MarkSent(ctx context.Context, id in
 	return r.updateClaimed(ctx, id, workerID, `
 		UPDATE feishu_notification_outbox
 		SET status = 'sent', provider_message_id = $3, sent_at = NOW(),
-			payload = '{}'::jsonb, recipient_open_id = NULL,
+			payload = '{}'::jsonb, recipient_open_id = NULL, recipient_chat_id = NULL,
 			claimed_at = NULL, claimed_by = NULL, last_error = NULL, updated_at = NOW()
 		WHERE id = $1 AND claimed_by = $2 AND status = 'processing'
 	`, strings.TrimSpace(providerMessageID))
@@ -133,7 +134,7 @@ func (r *feishuNotificationOutboxRepository) MarkDead(ctx context.Context, id in
 	return r.updateClaimed(ctx, id, workerID, `
 		UPDATE feishu_notification_outbox
 		SET status = 'dead', attempts = attempts + 1, last_error = $3,
-			payload = '{}'::jsonb, recipient_open_id = NULL,
+			payload = '{}'::jsonb, recipient_open_id = NULL, recipient_chat_id = NULL,
 			claimed_at = NULL, claimed_by = NULL, updated_at = NOW()
 		WHERE id = $1 AND claimed_by = $2 AND status = 'processing'
 	`, truncateFeishuDeliveryError(lastError))

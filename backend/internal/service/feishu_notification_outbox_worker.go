@@ -193,7 +193,7 @@ func (s *FeishuNotificationService) processOutboxItem(parent context.Context, it
 	if err == nil && strings.TrimSpace(cfg.AppID) != strings.TrimSpace(item.AppID) {
 		err = fmt.Errorf("notification app changed before delivery")
 	}
-	if err == nil {
+	if err == nil && item.UserID > 0 && strings.TrimSpace(item.RecipientChatID) == "" {
 		for _, category := range FeishuNotificationCategories {
 			if item.Category != category {
 				continue
@@ -218,7 +218,9 @@ func (s *FeishuNotificationService) processOutboxItem(parent context.Context, it
 	}
 	messageUUID := fmt.Sprintf("sub2api-feishu-%d", item.ID)
 	var messageID string
-	if err == nil && strings.TrimSpace(item.RecipientOpenID) != "" {
+	if err == nil && strings.TrimSpace(item.RecipientChatID) != "" {
+		messageID, err = s.sendInteractiveCardToChatWithUUID(ctx, cfg, item.RecipientChatID, card, messageUUID)
+	} else if err == nil && strings.TrimSpace(item.RecipientOpenID) != "" {
 		messageID, err = s.sendInteractiveCardToOpenIDWithUUID(ctx, cfg, item.UserID, item.RecipientOpenID, card, messageUUID)
 	} else if err == nil && item.Category == FeishuNotificationCategoryBotReply {
 		messageID, err = s.sendInteractiveCardWithPreferenceAndUUID(ctx, item.UserID, card, false, messageUUID)

@@ -833,6 +833,8 @@ func ProvideFeishuNotificationService(
 	apiKeyRequestRepo FeishuAPIKeyRequestRepository,
 	apiKeyService *APIKeyService,
 	usageLogRepo UsageLogRepository,
+	chatRepo FeishuChatBindingRepository,
+	groupRepo GroupRepository,
 ) *FeishuNotificationService {
 	svc := NewFeishuNotificationService(settingRepo, bindingRepo, outboxRepo)
 	svc.eventRepo = eventRepo
@@ -843,6 +845,9 @@ func ProvideFeishuNotificationService(
 	svc.channelMonitorRepo = channelMonitorRepo
 	svc.apiKeyRequestRepo = apiKeyRequestRepo
 	svc.apiKeyService = apiKeyService
+	svc.chatRepo = chatRepo
+	svc.groupRepo = groupRepo
+	svc.usageLogRepo = usageLogRepo
 	if reader, ok := usageLogRepo.(feishuDailyDigestUsageReader); ok {
 		svc.dailyUsageRepo = reader
 	}

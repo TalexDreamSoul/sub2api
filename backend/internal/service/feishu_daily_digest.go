@@ -104,7 +104,7 @@ func (s *FeishuNotificationService) enqueueDailyDigestForDate(ctx context.Contex
 			return err
 		}
 		if len(userIDs) == 0 {
-			return nil
+			break
 		}
 		stats, err := s.dailyUsageRepo.GetFeishuDailyDigestStats(ctx, userIDs, startTime, endTime, assistantCfg.APIKeyID)
 		if err != nil {
@@ -129,9 +129,43 @@ func (s *FeishuNotificationService) enqueueDailyDigestForDate(ctx context.Contex
 		}
 		afterUserID = userIDs[len(userIDs)-1]
 		if len(userIDs) < 500 {
-			return nil
+			break
 		}
 	}
+	return s.enqueueFeishuGroupDigests(ctx, cfg, startTime, endTime)
+}
+
+func (s *FeishuNotificationService) enqueueFeishuGroupDigests(ctx context.Context, cfg FeishuNotificationConfig, startTime, endTime time.Time) error {
+	if s.chatRepo == nil || s.groupRepo == nil || s.usageLogRepo == nil {
+		return nil
+	}
+	chats, err := s.chatRepo.ListActiveChats(ctx, []string{FeishuChatKindUser, FeishuChatKindOperations})
+	if err != nil {
+		return err
+	}
+	for i := range chats {
+		chat := &chats[i]
+		if !chat.DailyDigestEnabled || chat.Sub2APIGroupID == nil {
+			continue
+		}
+		text, err := s.renderFeishuGroupUsage(ctx, *chat.Sub2APIGroupID, startTime, endTime)
+		if err != nil {
+			return err
+		}
+		payload, err := marshalFeishuCard(renderFeishuGroupDigestCard(startTime, *chat, text))
+		if err != nil {
+			return err
+		}
+		if _, _, err := s.outboxRepo.Enqueue(ctx, FeishuNotificationOutboxInput{
+			DedupeKey:       fmt.Sprintf("feishu:chat-daily-digest:%s:%d", startTime.Format("2006-01-02"), chat.ID),
+			OrderingKey:     "feishu:chat:" + chat.ChatID,
+			RecipientChatID: chat.ChatID, AppID: cfg.AppID,
+			Category: FeishuNotificationCategoryDailyDigest, Payload: payload,
+		}); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 func (s *FeishuNotificationService) renderFeishuDailyDigestCard(ctx context.Context, day time.Time, stat FeishuDailyUsageStat) map[string]any {

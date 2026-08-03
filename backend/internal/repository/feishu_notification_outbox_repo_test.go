@@ -18,7 +18,7 @@ func TestFeishuNotificationOutboxEnqueueIsIdempotent(t *testing.T) {
 
 	payload := json.RawMessage(`{"config":{"wide_screen_mode":true}}`)
 	mock.ExpectQuery(`(?s)INSERT INTO feishu_notification_outbox.*ON CONFLICT \(dedupe_key\) DO NOTHING.*RETURNING id`).
-		WithArgs("admin:1:message:abc", "", int64(7), "", "cli_app", "admin_service", payload, sqlmock.AnyArg()).
+		WithArgs("admin:1:message:abc", "", int64(7), "", "", "cli_app", "admin_service", payload, sqlmock.AnyArg()).
 		WillReturnRows(sqlmock.NewRows([]string{"id"}).AddRow(int64(42)))
 
 	repo := NewFeishuNotificationOutboxRepository(db)
@@ -57,8 +57,8 @@ func TestFeishuNotificationOutboxClaimUsesLease(t *testing.T) {
 	createdAt := time.Now().Add(-time.Minute)
 	mock.ExpectQuery(`(?s)FOR UPDATE OF item SKIP LOCKED.*UPDATE feishu_notification_outbox AS o.*RETURNING`).
 		WithArgs("worker-1", 10, int64(30)).
-		WillReturnRows(sqlmock.NewRows([]string{"id", "user_id", "recipient_open_id", "app_id", "category", "payload", "attempts", "created_at"}).
-			AddRow(int64(5), int64(7), "", "cli_app", "admin_service", []byte(`{"header":{}}`), 1, createdAt))
+		WillReturnRows(sqlmock.NewRows([]string{"id", "user_id", "recipient_open_id", "recipient_chat_id", "app_id", "category", "payload", "attempts", "created_at"}).
+			AddRow(int64(5), int64(7), "", "", "cli_app", "admin_service", []byte(`{"header":{}}`), 1, createdAt))
 
 	repo := NewFeishuNotificationOutboxRepository(db)
 	items, err := repo.Claim(context.Background(), "worker-1", 10, 30*time.Second)

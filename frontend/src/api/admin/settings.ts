@@ -1077,6 +1077,42 @@ export interface FeishuAssistantConfig {
   max_active_keys: number;
 }
 
+export interface FeishuAssistantAdmin {
+  user_id: number;
+  email: string;
+  username: string;
+  configured_by_user_id?: number;
+  created_at: string;
+}
+
+export type FeishuChatKind = "user" | "operations" | "management" | "notifications";
+
+export interface FeishuChatBinding {
+  id: number;
+  app_id: string;
+  tenant_key: string;
+  chat_id: string;
+  chat_name: string;
+  kind: FeishuChatKind | "unconfigured";
+  sub2api_group_id?: number;
+  sub2api_group_name?: string;
+  status: "pending" | "active" | "disabled";
+  incident_notifications_enabled: boolean;
+  daily_digest_enabled: boolean;
+  configured_by_user_id?: number;
+  created_at: string;
+  updated_at: string;
+  disabled_at?: string;
+}
+
+export interface UpdateFeishuChatBindingRequest {
+  chat_name: string;
+  kind: FeishuChatKind;
+  sub2api_group_id: number;
+  incident_notifications_enabled: boolean;
+  daily_digest_enabled: boolean;
+}
+
 export interface FeishuAPIKeyRequest {
   id: number;
   user_id: number;
@@ -1113,6 +1149,31 @@ export async function listFeishuAPIKeyRequests(status = "pending", limit = 100):
 
 export async function decideFeishuAPIKeyRequest(id: number, approve: boolean, note = ""): Promise<FeishuAPIKeyRequest> {
   const { data } = await apiClient.post<FeishuAPIKeyRequest>(`/admin/settings/feishu-assistant/api-key-requests/${id}/decision`, { approve, note });
+  return data;
+}
+
+export async function listFeishuAssistantAdmins(): Promise<FeishuAssistantAdmin[]> {
+  const { data } = await apiClient.get<FeishuAssistantAdmin[]>("/admin/settings/feishu-assistant/admins");
+  return data;
+}
+
+export async function addFeishuAssistantAdmin(userId: number): Promise<{ assigned: boolean }> {
+  const { data } = await apiClient.post<{ assigned: boolean }>("/admin/settings/feishu-assistant/admins", { user_id: userId });
+  return data;
+}
+
+export async function removeFeishuAssistantAdmin(userId: number): Promise<{ removed: boolean }> {
+  const { data } = await apiClient.delete<{ removed: boolean }>(`/admin/settings/feishu-assistant/admins/${userId}`);
+  return data;
+}
+
+export async function listFeishuChatBindings(): Promise<FeishuChatBinding[]> {
+  const { data } = await apiClient.get<FeishuChatBinding[]>("/admin/settings/feishu-assistant/chats");
+  return data;
+}
+
+export async function updateFeishuChatBinding(id: number, input: UpdateFeishuChatBindingRequest): Promise<FeishuChatBinding> {
+  const { data } = await apiClient.put<FeishuChatBinding>(`/admin/settings/feishu-assistant/chats/${id}`, input);
   return data;
 }
 
@@ -1694,6 +1755,11 @@ export const settingsAPI = {
   testFeishuAssistantModel,
   listFeishuAPIKeyRequests,
   decideFeishuAPIKeyRequest,
+  listFeishuAssistantAdmins,
+  addFeishuAssistantAdmin,
+  removeFeishuAssistantAdmin,
+  listFeishuChatBindings,
+  updateFeishuChatBinding,
   getEmailTemplates,
   getEmailTemplate,
   updateEmailTemplate,

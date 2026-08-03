@@ -112,6 +112,7 @@ var ProviderSet = wire.NewSet(
 	NewFeishuNotificationOutboxRepository,
 	NewFeishuEventReceiptRepository,
 	NewFeishuAPIKeyRequestRepository,
+	NewFeishuChatBindingRepository,
 	NewAccountResetRepository,
 	NewNotificationPreferenceRepository,
 	NewAffiliateRepository,

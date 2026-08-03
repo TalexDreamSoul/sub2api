@@ -87,16 +87,14 @@ func (s *FeishuNotificationService) queueChannelMonitorEvent(ctx context.Context
 		return err
 	}
 	if !cfg.Enabled || cfg.AppID == "" || cfg.AppSecret == "" {
-		// Notifications disabled at event time: consume the event rather than
-		// delivering a stale incident after an administrator enables Feishu.
 		return nil
 	}
+	card := channelMonitorNotificationCard(event)
+	businessKey := fmt.Sprintf("channel-monitor:%d:%d:%s", event.MonitorID, event.IncidentVersion, event.EventKind)
 	lister, ok := s.bindingRepo.(feishuChannelRecipientLister)
 	if !ok {
 		return fmt.Errorf("feishu channel recipient listing is unavailable")
 	}
-	card := channelMonitorNotificationCard(event)
-	businessKey := fmt.Sprintf("channel-monitor:%d:%d:%s", event.MonitorID, event.IncidentVersion, event.EventKind)
 	var afterUserID int64
 	for {
 		userIDs, err := lister.ListFeishuChannelRecipientUserIDs(ctx, cfg.AppID, afterUserID, 500)
@@ -111,9 +109,35 @@ func (s *FeishuNotificationService) queueChannelMonitorEvent(ctx context.Context
 			afterUserID = userID
 		}
 		if len(userIDs) < 500 {
-			return nil
+			break
 		}
 	}
+	if s.chatRepo == nil {
+		return nil
+	}
+	chats, err := s.chatRepo.ListActiveChats(ctx, []string{FeishuChatKindOperations, FeishuChatKindManagement, FeishuChatKindNotifications})
+	if err != nil {
+		return err
+	}
+	payload, err := marshalFeishuCard(card)
+	if err != nil {
+		return err
+	}
+	for i := range chats {
+		chat := &chats[i]
+		if !chat.IncidentNotificationsEnabled {
+			continue
+		}
+		if _, _, err := s.outboxRepo.Enqueue(ctx, FeishuNotificationOutboxInput{
+			DedupeKey:       fmt.Sprintf("feishu:chat:%s:%s:%s", chat.ChatID, businessKey, event.EventKind),
+			OrderingKey:     "feishu:chat:" + chat.ChatID,
+			RecipientChatID: chat.ChatID, AppID: cfg.AppID,
+			Category: "channel", Payload: payload,
+		}); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 func channelMonitorNotificationCard(event *ChannelMonitorNotificationEvent) map[string]any {

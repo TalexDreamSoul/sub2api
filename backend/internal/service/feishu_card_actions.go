@@ -54,6 +54,14 @@ func (s *FeishuNotificationService) handleFeishuCardAction(ctx context.Context, 
 		return "", err
 	}
 	action := strings.TrimSpace(fmt.Sprint(payload.Event.Action.Value["action"]))
+	if action == "group_command" {
+		command := normalizeFeishuBotCommand(strings.TrimSpace(fmt.Sprint(payload.Event.Action.Value["command"])))
+		chatID := strings.TrimSpace(fmt.Sprint(payload.Event.Action.Value["chat_id"]))
+		if chatID == "" || !isFeishuGroupMenuAction(command) {
+			return "ignored", nil
+		}
+		return s.handleFeishuGroupMessage(ctx, receipt, chatID, command)
+	}
 	if action != "notification_toggle" && action != "api_key_request" {
 		return "ignored", nil
 	}

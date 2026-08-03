@@ -53,14 +53,21 @@ func (s *FeishuNotificationService) handleFeishuCardAction(ctx context.Context, 
 				Value map[string]any `json:"value"`
 			} `json:"action"`
 		} `json:"event"`
+		Action struct {
+			Value map[string]any `json:"value"`
+		} `json:"action"`
 	}
 	if err := json.Unmarshal(receipt.Payload, &payload); err != nil {
 		return "", err
 	}
-	action := strings.TrimSpace(fmt.Sprint(payload.Event.Action.Value["action"]))
+	actionValue := payload.Event.Action.Value
+	if len(actionValue) == 0 {
+		actionValue = payload.Action.Value
+	}
+	action := strings.TrimSpace(fmt.Sprint(actionValue["action"]))
 	if action == "group_command" {
-		command := normalizeFeishuBotCommand(strings.TrimSpace(fmt.Sprint(payload.Event.Action.Value["command"])))
-		chatID := strings.TrimSpace(fmt.Sprint(payload.Event.Action.Value["chat_id"]))
+		command := normalizeFeishuBotCommand(strings.TrimSpace(fmt.Sprint(actionValue["command"])))
+		chatID := strings.TrimSpace(fmt.Sprint(actionValue["chat_id"]))
 		if chatID == "" || !isFeishuGroupMenuAction(command) {
 			return "ignored", nil
 		}
@@ -80,12 +87,12 @@ func (s *FeishuNotificationService) handleFeishuCardAction(ctx context.Context, 
 	if err != nil {
 		return "", err
 	}
-	language := normalizeFeishuLanguage(strings.TrimSpace(fmt.Sprint(payload.Event.Action.Value["language"])))
+	language := normalizeFeishuLanguage(strings.TrimSpace(fmt.Sprint(actionValue["language"])))
 	if action == "bot_menu" {
 		return s.enqueueFeishuBotCard(ctx, receipt, binding.UserID, s.feishuBotMenuCard(ctx, language))
 	}
 	if action == "bot_command" {
-		command := normalizeFeishuBotCommand(strings.TrimSpace(fmt.Sprint(payload.Event.Action.Value["command"])))
+		command := normalizeFeishuBotCommand(strings.TrimSpace(fmt.Sprint(actionValue["command"])))
 		if !isFeishuBotMenuActionCommand(command) {
 			return "ignored", nil
 		}
@@ -106,7 +113,7 @@ func (s *FeishuNotificationService) handleFeishuCardAction(ctx context.Context, 
 		return s.enqueueFeishuBotReply(ctx, receipt, binding.UserID, reply)
 	}
 	if action == "api_key_request" {
-		groupID, err := strconv.ParseInt(strings.TrimSpace(fmt.Sprint(payload.Event.Action.Value["group_id"])), 10, 64)
+		groupID, err := strconv.ParseInt(strings.TrimSpace(fmt.Sprint(actionValue["group_id"])), 10, 64)
 		if err != nil || groupID <= 0 {
 			return s.enqueueFeishuBotReply(ctx, receipt, binding.UserID, "API Key 申请参数无效。")
 		}
@@ -114,7 +121,7 @@ func (s *FeishuNotificationService) handleFeishuCardAction(ctx context.Context, 
 	}
 
 	var enabled bool
-	switch value := payload.Event.Action.Value["enabled"].(type) {
+	switch value := actionValue["enabled"].(type) {
 	case bool:
 		enabled = value
 	case string:

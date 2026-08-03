@@ -5,6 +5,7 @@ import (
 	"context"
 	"crypto/aes"
 	"crypto/cipher"
+	"crypto/sha1"
 	"crypto/sha256"
 	"crypto/subtle"
 	"encoding/base64"
@@ -39,6 +40,8 @@ type feishuEventEnvelope struct {
 	Type      string `json:"type"`
 	Challenge string `json:"challenge"`
 	Encrypt   string `json:"encrypt"`
+	OpenID    string `json:"open_id"`
+	TenantKey string `json:"tenant_key"`
 	Header    struct {
 		EventID   string `json:"event_id"`
 		EventType string `json:"event_type"`
@@ -112,8 +115,13 @@ func (s *FeishuNotificationService) VerifyAndReceiveEvent(ctx context.Context, h
 	if s.eventRepo == nil {
 		return FeishuEventAcceptResult{}, fmt.Errorf("feishu event repository is unavailable")
 	}
+	legacyCardAction := event.Type == "card.action.trigger" && event.Header.EventType == ""
 	if cfg.EncryptKey != "" {
-		if err := verifyFeishuEventSignature(headers, cfg.EncryptKey, body, time.Now()); err != nil {
+		if legacyCardAction {
+			if err := verifyFeishuLegacyCardSignature(headers, cfg.VerificationToken, body, time.Now()); err != nil {
+				return FeishuEventAcceptResult{}, err
+			}
+		} else if err := verifyFeishuEventSignature(headers, cfg.EncryptKey, body, time.Now()); err != nil {
 			return FeishuEventAcceptResult{}, err
 		}
 	}
@@ -123,20 +131,44 @@ func (s *FeishuNotificationService) VerifyAndReceiveEvent(ctx context.Context, h
 	if event.Header.AppID != "" && event.Header.AppID != cfg.AppID {
 		return FeishuEventAcceptResult{}, ErrFeishuEventUnauthorized
 	}
-	if event.Header.EventID == "" || event.Header.EventType == "" {
+	eventID := strings.TrimSpace(event.Header.EventID)
+	eventType := strings.TrimSpace(event.Header.EventType)
+	if legacyCardAction {
+		eventType = "card.action.trigger_v1"
+		idHash := sha256.Sum256(append([]byte(headers.Timestamp+headers.Nonce), body...))
+		eventID = "legacy-card-" + hex.EncodeToString(idHash[:])
+	}
+	if eventID == "" || eventType == "" {
 		return FeishuEventAcceptResult{}, ErrFeishuEventInvalid
 	}
 	hash := sha256.Sum256(plainBody)
-	senderOpenID := firstNonEmpty(event.Event.Sender.SenderID.OpenID, event.Event.Operator.OpenID, event.Event.Operator.OperatorID.OpenID, event.Event.OperatorID.OpenID)
+	senderOpenID := firstNonEmpty(event.Event.Sender.SenderID.OpenID, event.Event.Operator.OpenID, event.Event.Operator.OperatorID.OpenID, event.Event.OperatorID.OpenID, event.OpenID)
+	tenantKey := firstNonEmpty(event.Header.TenantKey, event.TenantKey)
 	_, inserted, err := s.eventRepo.Receive(ctx, FeishuEventReceiptInput{
-		AppID: cfg.AppID, EventID: event.Header.EventID, EventType: event.Header.EventType,
-		TenantKey: event.Header.TenantKey, SenderOpenID: senderOpenID,
+		AppID: cfg.AppID, EventID: eventID, EventType: eventType,
+		TenantKey: tenantKey, SenderOpenID: senderOpenID,
 		Payload: append(json.RawMessage(nil), plainBody...), PayloadSHA256: hex.EncodeToString(hash[:]),
 	})
 	if err != nil {
 		return FeishuEventAcceptResult{}, err
 	}
 	return FeishuEventAcceptResult{Duplicate: !inserted}, nil
+}
+
+func verifyFeishuLegacyCardSignature(headers FeishuEventHeaders, verificationToken string, body []byte, now time.Time) error {
+	timestamp, err := strconv.ParseInt(strings.TrimSpace(headers.Timestamp), 10, 64)
+	if err != nil || strings.TrimSpace(headers.Nonce) == "" || strings.TrimSpace(headers.Signature) == "" || strings.TrimSpace(verificationToken) == "" {
+		return ErrFeishuEventUnauthorized
+	}
+	if delta := now.Sub(time.Unix(timestamp, 0)); delta > 5*time.Minute || delta < -5*time.Minute {
+		return ErrFeishuEventUnauthorized
+	}
+	sum := sha1.Sum(append([]byte(headers.Timestamp+headers.Nonce+verificationToken), body...))
+	expected := hex.EncodeToString(sum[:])
+	if subtle.ConstantTimeCompare([]byte(strings.ToLower(headers.Signature)), []byte(expected)) != 1 {
+		return ErrFeishuEventUnauthorized
+	}
+	return nil
 }
 
 func verifyFeishuEventSignature(headers FeishuEventHeaders, encryptKey string, body []byte, now time.Time) error {

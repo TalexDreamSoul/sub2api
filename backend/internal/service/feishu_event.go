@@ -111,7 +111,9 @@ func (s *FeishuNotificationService) VerifyAndReceiveEvent(ctx context.Context, h
 	// verification token (and, for encrypted payloads, successful decryption)
 	// authenticates this one-shot handshake. Normal events remain signed.
 	if event.Challenge != "" || event.Type == "url_verification" {
-		if event.Challenge == "" || subtle.ConstantTimeCompare([]byte(token), []byte(cfg.VerificationToken)) != 1 {
+		validToken := subtle.ConstantTimeCompare([]byte(token), []byte(cfg.VerificationToken)) == 1 ||
+			subtle.ConstantTimeCompare([]byte(token), []byte(cfg.CardVerificationToken)) == 1
+		if event.Challenge == "" || !validToken {
 			return FeishuEventAcceptResult{}, fmt.Errorf("%w: challenge token", ErrFeishuEventUnauthorized)
 		}
 		return FeishuEventAcceptResult{Challenge: event.Challenge}, nil
@@ -121,9 +123,13 @@ func (s *FeishuNotificationService) VerifyAndReceiveEvent(ctx context.Context, h
 	}
 	legacyCardAction := event.Header.EventType == "" && (event.Type == "card.action.trigger" || (event.OpenID != "" && len(event.Action.Value) > 0))
 	cardAction := legacyCardAction || event.Header.EventType == "card.action.trigger"
+	expectedToken := cfg.VerificationToken
+	if cardAction {
+		expectedToken = cfg.CardVerificationToken
+	}
 	cardSignaturePresent := strings.TrimSpace(headers.Signature) != ""
 	if cardAction && cardSignaturePresent {
-		if err := verifyFeishuCardSignature(headers, cfg.VerificationToken, body); err != nil {
+		if err := verifyFeishuCardSignature(headers, expectedToken, body); err != nil {
 			return FeishuEventAcceptResult{}, err
 		}
 	} else if !cardAction && cfg.EncryptKey != "" {
@@ -131,7 +137,7 @@ func (s *FeishuNotificationService) VerifyAndReceiveEvent(ctx context.Context, h
 			return FeishuEventAcceptResult{}, err
 		}
 	}
-	if subtle.ConstantTimeCompare([]byte(token), []byte(cfg.VerificationToken)) != 1 {
+	if subtle.ConstantTimeCompare([]byte(token), []byte(expectedToken)) != 1 {
 		return FeishuEventAcceptResult{}, fmt.Errorf("%w: payload token", ErrFeishuEventUnauthorized)
 	}
 	if event.Header.AppID != "" && event.Header.AppID != cfg.AppID {

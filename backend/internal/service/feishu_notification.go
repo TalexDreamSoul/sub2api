@@ -34,14 +34,15 @@ var (
 )
 
 type FeishuNotificationConfig struct {
-	Enabled           bool
-	AppID             string
-	AppSecret         string
-	TokenURL          string
-	MessageURL        string
-	PanelURL          string
-	VerificationToken string
-	EncryptKey        string
+	Enabled               bool
+	AppID                 string
+	AppSecret             string
+	TokenURL              string
+	MessageURL            string
+	PanelURL              string
+	VerificationToken     string
+	CardVerificationToken string
+	EncryptKey            string
 }
 
 type FeishuUserIdentityBinding struct {
@@ -197,6 +198,7 @@ func (s *FeishuNotificationService) GetConfig(ctx context.Context) (FeishuNotifi
 		SettingKeyFeishuNotifyMessageURL,
 		SettingKeyFeishuNotifyPanelURL,
 		SettingKeyFeishuNotifyVerificationToken,
+		SettingKeyFeishuNotifyCardVerificationToken,
 		SettingKeyFeishuNotifyEncryptKey,
 	})
 	if err != nil {
@@ -209,6 +211,7 @@ func (s *FeishuNotificationService) GetConfig(ctx context.Context) (FeishuNotifi
 	cfg.MessageURL = firstNonEmpty(settings[SettingKeyFeishuNotifyMessageURL], defaultFeishuNotifyMessageURL)
 	cfg.PanelURL = firstNonEmpty(settings[SettingKeyFeishuNotifyPanelURL], defaultFeishuPanelPath)
 	cfg.VerificationToken = strings.TrimSpace(settings[SettingKeyFeishuNotifyVerificationToken])
+	cfg.CardVerificationToken = firstNonEmpty(settings[SettingKeyFeishuNotifyCardVerificationToken], cfg.VerificationToken)
 	cfg.EncryptKey = strings.TrimSpace(settings[SettingKeyFeishuNotifyEncryptKey])
 	return cfg, nil
 }

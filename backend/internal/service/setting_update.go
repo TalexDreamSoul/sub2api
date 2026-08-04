@@ -184,6 +184,7 @@ func (s *SettingService) buildSystemSettingsUpdates(ctx context.Context, setting
 	settings.FeishuNotifyMessageURL = firstNonEmpty(settings.FeishuNotifyMessageURL, defaultFeishuNotifyMessageURL)
 	settings.FeishuNotifyPanelURL = firstNonEmpty(settings.FeishuNotifyPanelURL, defaultFeishuPanelPath)
 	settings.FeishuNotifyVerificationToken = strings.TrimSpace(settings.FeishuNotifyVerificationToken)
+	settings.FeishuNotifyCardVerificationToken = strings.TrimSpace(settings.FeishuNotifyCardVerificationToken)
 	settings.FeishuNotifyEncryptKey = strings.TrimSpace(settings.FeishuNotifyEncryptKey)
 
 	updates := make(map[string]string)
@@ -302,6 +303,9 @@ func (s *SettingService) buildSystemSettingsUpdates(ctx context.Context, setting
 	}
 	if settings.FeishuNotifyVerificationToken != "" {
 		updates[SettingKeyFeishuNotifyVerificationToken] = settings.FeishuNotifyVerificationToken
+	}
+	if settings.FeishuNotifyCardVerificationToken != "" {
+		updates[SettingKeyFeishuNotifyCardVerificationToken] = settings.FeishuNotifyCardVerificationToken
 	}
 	if settings.FeishuNotifyEncryptKey != "" {
 		updates[SettingKeyFeishuNotifyEncryptKey] = settings.FeishuNotifyEncryptKey

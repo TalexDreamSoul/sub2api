@@ -26,7 +26,12 @@
         <div class="grid gap-4 md:grid-cols-2">
           <label class="field"><span>App ID</span><input v-model.trim="form.appId" class="input" autocomplete="off" /></label>
           <label class="field"><span>App Secret</span><input v-model="form.appSecret" type="password" class="input" autocomplete="new-password" :placeholder="secretPlaceholder(settings?.feishu_notify_app_secret_configured)" /></label>
-          <label class="field"><span>Verification Token</span><input v-model="form.verificationToken" type="password" class="input" autocomplete="new-password" :placeholder="secretPlaceholder(settings?.feishu_notify_verification_token_configured)" /></label>
+          <label class="field"><span>{{ tx('事件 Verification Token', 'Event Verification Token') }}</span><input v-model="form.verificationToken" type="password" class="input" autocomplete="new-password" :placeholder="secretPlaceholder(settings?.feishu_notify_verification_token_configured)" /></label>
+          <label class="field">
+            <span>{{ tx('卡片回调 Verification Token', 'Card callback Verification Token') }}</span>
+            <input v-model="form.cardVerificationToken" type="password" class="input" autocomplete="new-password" :placeholder="secretPlaceholder(settings?.feishu_notify_card_verification_token_configured)" />
+            <small class="text-left">{{ tx('填写飞书“回调配置”页的 Verification Token；留空时沿用上方事件 Token。', 'Use the Verification Token from Feishu Callback configuration; when unset, the event token above is used.') }}</small>
+          </label>
           <label class="field"><span>Encrypt Key</span><input v-model="form.encryptKey" type="password" class="input" autocomplete="new-password" :placeholder="secretPlaceholder(settings?.feishu_notify_encrypt_key_configured)" /></label>
           <label class="field md:col-span-2">
             <span>{{ tx('事件回调地址', 'Event callback URL') }}</span>
@@ -184,7 +189,7 @@ const message = ref('')
 const messageIdempotencyKey = ref('')
 const showMessageConfirm = ref(false)
 const deliveries = ref<FeishuDelivery[]>([])
-const form = reactive({ enabled: false, appId: '', appSecret: '', verificationToken: '', encryptKey: '', panelUrl: '/feishu/panel' })
+const form = reactive({ enabled: false, appId: '', appSecret: '', verificationToken: '', cardVerificationToken: '', encryptKey: '', panelUrl: '/feishu/panel' })
 const assistantConfig = ref<FeishuAssistantConfig | null>(null)
 const assistantSaving = ref(false)
 const assistantTesting = ref(false)
@@ -249,7 +254,7 @@ async function loadSettings() {
   try {
     const value = await settingsAPI.getSettings()
     settings.value = value
-    Object.assign(form, { enabled: value.feishu_notify_enabled, appId: value.feishu_notify_app_id || '', appSecret: '', verificationToken: '', encryptKey: '', panelUrl: value.feishu_notify_panel_url || '/feishu/panel' })
+	Object.assign(form, { enabled: value.feishu_notify_enabled, appId: value.feishu_notify_app_id || '', appSecret: '', verificationToken: '', cardVerificationToken: '', encryptKey: '', panelUrl: value.feishu_notify_panel_url || '/feishu/panel' })
   } catch (error) { reportError(error) }
 }
 async function saveConfig() {
@@ -258,6 +263,7 @@ async function saveConfig() {
     const payload: Record<string, unknown> = { feishu_notify_enabled: form.enabled, feishu_notify_app_id: form.appId, feishu_notify_panel_url: form.panelUrl }
     if (form.appSecret) payload.feishu_notify_app_secret = form.appSecret
     if (form.verificationToken) payload.feishu_notify_verification_token = form.verificationToken
+	if (form.cardVerificationToken) payload.feishu_notify_card_verification_token = form.cardVerificationToken
     if (form.encryptKey) payload.feishu_notify_encrypt_key = form.encryptKey
     await stepUp.run(() => settingsAPI.updateSettings(payload))
     appStore.showSuccess(tx('飞书配置已保存', 'Feishu configuration saved'))

@@ -162,12 +162,17 @@ func (s *FeishuNotificationService) VerifyAndReceiveEvent(ctx context.Context, h
 }
 
 func verifyFeishuCardSignature(headers FeishuEventHeaders, verificationToken string, body []byte, now time.Time) error {
-	timestamp, err := strconv.ParseInt(strings.TrimSpace(headers.Timestamp), 10, 64)
-	if err != nil || strings.TrimSpace(headers.Nonce) == "" || strings.TrimSpace(headers.Signature) == "" || strings.TrimSpace(verificationToken) == "" {
-		return fmt.Errorf("%w: missing card signature headers", ErrFeishuEventUnauthorized)
+	if strings.TrimSpace(headers.Signature) == "" || strings.TrimSpace(verificationToken) == "" {
+		return fmt.Errorf("%w: missing card signature", ErrFeishuEventUnauthorized)
 	}
-	if delta := now.Sub(time.Unix(timestamp, 0)); delta > 5*time.Minute || delta < -5*time.Minute {
-		return fmt.Errorf("%w: stale card signature", ErrFeishuEventUnauthorized)
+	if strings.TrimSpace(headers.Timestamp) != "" {
+		timestamp, err := strconv.ParseInt(strings.TrimSpace(headers.Timestamp), 10, 64)
+		if err != nil {
+			return fmt.Errorf("%w: invalid card timestamp", ErrFeishuEventUnauthorized)
+		}
+		if delta := now.Sub(time.Unix(timestamp, 0)); delta > 5*time.Minute || delta < -5*time.Minute {
+			return fmt.Errorf("%w: stale card signature", ErrFeishuEventUnauthorized)
+		}
 	}
 	sum := sha1.Sum(append([]byte(headers.Timestamp+headers.Nonce+verificationToken), body...))
 	expected := hex.EncodeToString(sum[:])

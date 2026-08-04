@@ -121,7 +121,7 @@ func (s *FeishuNotificationService) VerifyAndReceiveEvent(ctx context.Context, h
 	}
 	legacyCardAction := event.Header.EventType == "" && (event.Type == "card.action.trigger" || (event.OpenID != "" && len(event.Action.Value) > 0))
 	cardAction := legacyCardAction || event.Header.EventType == "card.action.trigger"
-	cardSignaturePresent := strings.TrimSpace(headers.Timestamp) != "" || strings.TrimSpace(headers.Nonce) != "" || strings.TrimSpace(headers.Signature) != ""
+	cardSignaturePresent := strings.TrimSpace(headers.Signature) != ""
 	if cardAction && cardSignaturePresent {
 		if err := verifyFeishuCardSignature(headers, cfg.VerificationToken, body, time.Now()); err != nil {
 			return FeishuEventAcceptResult{}, err

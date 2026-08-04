@@ -11,7 +11,6 @@ import (
 	"encoding/base64"
 	"encoding/hex"
 	"encoding/json"
-	"fmt"
 	"testing"
 	"time"
 
@@ -49,14 +48,14 @@ func newFeishuEventTestService() (*FeishuNotificationService, *feishuEventTestRe
 	return svc, events
 }
 
-func TestFeishuEventSignatureRejectsReplay(t *testing.T) {
+func TestFeishuEventSignatureUsesOpaqueHeaders(t *testing.T) {
 	body := []byte(`{"schema":"2.0"}`)
-	now := time.Now().Truncate(time.Second)
-	headers := FeishuEventHeaders{Timestamp: fmt.Sprint(now.Unix()), Nonce: "nonce"}
+	headers := FeishuEventHeaders{Timestamp: "opaque-timestamp", Nonce: "nonce"}
 	sum := sha256.Sum256(append([]byte(headers.Timestamp+headers.Nonce+"encrypt-key"), body...))
 	headers.Signature = hex.EncodeToString(sum[:])
-	require.NoError(t, verifyFeishuEventSignature(headers, "encrypt-key", body, now))
-	require.ErrorIs(t, verifyFeishuEventSignature(headers, "encrypt-key", body, now.Add(6*time.Minute)), ErrFeishuEventUnauthorized)
+	require.NoError(t, verifyFeishuEventSignature(headers, "encrypt-key", body))
+	headers.Signature = "invalid"
+	require.ErrorIs(t, verifyFeishuEventSignature(headers, "encrypt-key", body), ErrFeishuEventUnauthorized)
 }
 
 func TestFeishuEventURLVerificationChecksToken(t *testing.T) {

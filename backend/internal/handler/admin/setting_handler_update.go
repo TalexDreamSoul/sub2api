@@ -98,15 +98,14 @@ type UpdateSettingsRequest struct {
 	FeishuConnectFrontendRedirectURL string `json:"feishu_connect_frontend_redirect_url"`
 
 	// Feishu Notification App
-	FeishuNotifyEnabled               bool   `json:"feishu_notify_enabled"`
-	FeishuNotifyAppID                 string `json:"feishu_notify_app_id"`
-	FeishuNotifyAppSecret             string `json:"feishu_notify_app_secret"`
-	FeishuNotifyTokenURL              string `json:"feishu_notify_token_url"`
-	FeishuNotifyMessageURL            string `json:"feishu_notify_message_url"`
-	FeishuNotifyPanelURL              string `json:"feishu_notify_panel_url"`
-	FeishuNotifyVerificationToken     string `json:"feishu_notify_verification_token"`
-	FeishuNotifyCardVerificationToken string `json:"feishu_notify_card_verification_token"`
-	FeishuNotifyEncryptKey            string `json:"feishu_notify_encrypt_key"`
+	FeishuNotifyEnabled           bool   `json:"feishu_notify_enabled"`
+	FeishuNotifyAppID             string `json:"feishu_notify_app_id"`
+	FeishuNotifyAppSecret         string `json:"feishu_notify_app_secret"`
+	FeishuNotifyTokenURL          string `json:"feishu_notify_token_url"`
+	FeishuNotifyMessageURL        string `json:"feishu_notify_message_url"`
+	FeishuNotifyPanelURL          string `json:"feishu_notify_panel_url"`
+	FeishuNotifyVerificationToken string `json:"feishu_notify_verification_token"`
+	FeishuNotifyEncryptKey        string `json:"feishu_notify_encrypt_key"`
 
 	// WeChat Connect OAuth 登录
 	WeChatConnectEnabled             bool   `json:"wechat_connect_enabled"`
@@ -535,10 +534,6 @@ func feishuNotificationSettingsChanged(fields map[string]json.RawMessage, req Up
 			}
 		case "feishu_notify_verification_token":
 			if req.FeishuNotifyVerificationToken != previous.FeishuNotifyVerificationToken {
-				return true
-			}
-		case "feishu_notify_card_verification_token":
-			if req.FeishuNotifyCardVerificationToken != previous.FeishuNotifyCardVerificationToken {
 				return true
 			}
 		case "feishu_notify_encrypt_key":
@@ -1048,10 +1043,6 @@ func (h *SettingHandler) UpdateSettings(c *gin.Context) {
 	req.FeishuNotifyVerificationToken = strings.TrimSpace(req.FeishuNotifyVerificationToken)
 	if req.FeishuNotifyVerificationToken == "" {
 		req.FeishuNotifyVerificationToken = previousSettings.FeishuNotifyVerificationToken
-	}
-	req.FeishuNotifyCardVerificationToken = strings.TrimSpace(req.FeishuNotifyCardVerificationToken)
-	if req.FeishuNotifyCardVerificationToken == "" {
-		req.FeishuNotifyCardVerificationToken = previousSettings.FeishuNotifyCardVerificationToken
 	}
 	req.FeishuNotifyEncryptKey = strings.TrimSpace(req.FeishuNotifyEncryptKey)
 	if req.FeishuNotifyEncryptKey == "" {
@@ -1700,7 +1691,6 @@ func (h *SettingHandler) UpdateSettings(c *gin.Context) {
 		FeishuNotifyMessageURL:                 req.FeishuNotifyMessageURL,
 		FeishuNotifyPanelURL:                   req.FeishuNotifyPanelURL,
 		FeishuNotifyVerificationToken:          req.FeishuNotifyVerificationToken,
-		FeishuNotifyCardVerificationToken:      req.FeishuNotifyCardVerificationToken,
 		FeishuNotifyEncryptKey:                 req.FeishuNotifyEncryptKey,
 		WeChatConnectEnabled:                   req.WeChatConnectEnabled,
 		WeChatConnectAppID:                     req.WeChatConnectAppID,
@@ -2302,7 +2292,6 @@ func (h *SettingHandler) UpdateSettings(c *gin.Context) {
 		FeishuNotifyMessageURL:                                 updatedSettings.FeishuNotifyMessageURL,
 		FeishuNotifyPanelURL:                                   updatedSettings.FeishuNotifyPanelURL,
 		FeishuNotifyVerificationTokenConfigured:                updatedSettings.FeishuNotifyVerificationTokenConfigured,
-		FeishuNotifyCardVerificationTokenConfigured:            updatedSettings.FeishuNotifyCardVerificationTokenConfigured,
 		FeishuNotifyEncryptKeyConfigured:                       updatedSettings.FeishuNotifyEncryptKeyConfigured,
 		WeChatConnectEnabled:                                   updatedSettings.WeChatConnectEnabled,
 		WeChatConnectAppID:                                     updatedSettings.WeChatConnectAppID,

@@ -232,7 +232,6 @@ func (h *SettingHandler) GetSettings(c *gin.Context) {
 		FeishuNotifyMessageURL:                                 settings.FeishuNotifyMessageURL,
 		FeishuNotifyPanelURL:                                   settings.FeishuNotifyPanelURL,
 		FeishuNotifyVerificationTokenConfigured:                settings.FeishuNotifyVerificationTokenConfigured,
-		FeishuNotifyCardVerificationTokenConfigured:            settings.FeishuNotifyCardVerificationTokenConfigured,
 		FeishuNotifyEncryptKeyConfigured:                       settings.FeishuNotifyEncryptKeyConfigured,
 		WeChatConnectEnabled:                                   settings.WeChatConnectEnabled,
 		WeChatConnectAppID:                                     settings.WeChatConnectAppID,

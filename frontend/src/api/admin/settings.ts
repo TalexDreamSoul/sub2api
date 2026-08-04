@@ -518,7 +518,6 @@ export interface SystemSettings {
   feishu_notify_app_id: string;
   feishu_notify_app_secret_configured: boolean;
   feishu_notify_verification_token_configured?: boolean;
-	feishu_notify_card_verification_token_configured?: boolean;
   feishu_notify_encrypt_key_configured?: boolean;
   feishu_notify_token_url: string;
   feishu_notify_message_url: string;
@@ -853,7 +852,6 @@ export interface UpdateSettingsRequest {
   feishu_notify_app_id?: string;
   feishu_notify_app_secret?: string;
   feishu_notify_verification_token?: string;
-	feishu_notify_card_verification_token?: string;
   feishu_notify_encrypt_key?: string;
   feishu_notify_token_url?: string;
   feishu_notify_message_url?: string;

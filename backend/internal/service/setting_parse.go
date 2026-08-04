@@ -115,7 +115,6 @@ func (s *SettingService) InitializeDefaultSettings(ctx context.Context) error {
 		SettingKeyFeishuNotifyMessageURL:                    defaultFeishuNotifyMessageURL,
 		SettingKeyFeishuNotifyPanelURL:                      defaultFeishuPanelPath,
 		SettingKeyFeishuNotifyVerificationToken:             "",
-		SettingKeyFeishuNotifyCardVerificationToken:         "",
 		SettingKeyFeishuNotifyEncryptKey:                    "",
 		SettingKeyOIDCConnectEnabled:                        "false",
 		SettingKeyOIDCConnectProviderName:                   "OIDC",
@@ -681,8 +680,6 @@ func (s *SettingService) parseSettings(settings map[string]string) *SystemSettin
 	result.FeishuNotifyPanelURL = firstNonEmpty(settings[SettingKeyFeishuNotifyPanelURL], defaultFeishuPanelPath)
 	result.FeishuNotifyVerificationToken = strings.TrimSpace(settings[SettingKeyFeishuNotifyVerificationToken])
 	result.FeishuNotifyVerificationTokenConfigured = result.FeishuNotifyVerificationToken != ""
-	result.FeishuNotifyCardVerificationToken = strings.TrimSpace(settings[SettingKeyFeishuNotifyCardVerificationToken])
-	result.FeishuNotifyCardVerificationTokenConfigured = result.FeishuNotifyCardVerificationToken != ""
 	result.FeishuNotifyEncryptKey = strings.TrimSpace(settings[SettingKeyFeishuNotifyEncryptKey])
 	result.FeishuNotifyEncryptKeyConfigured = result.FeishuNotifyEncryptKey != ""
 

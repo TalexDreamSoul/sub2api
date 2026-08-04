@@ -13,9 +13,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"strconv"
 	"strings"
-	"time"
 )
 
 var (
@@ -111,9 +109,7 @@ func (s *FeishuNotificationService) VerifyAndReceiveEvent(ctx context.Context, h
 	// verification token (and, for encrypted payloads, successful decryption)
 	// authenticates this one-shot handshake. Normal events remain signed.
 	if event.Challenge != "" || event.Type == "url_verification" {
-		validToken := subtle.ConstantTimeCompare([]byte(token), []byte(cfg.VerificationToken)) == 1 ||
-			subtle.ConstantTimeCompare([]byte(token), []byte(cfg.CardVerificationToken)) == 1
-		if event.Challenge == "" || !validToken {
+		if event.Challenge == "" || subtle.ConstantTimeCompare([]byte(token), []byte(cfg.VerificationToken)) != 1 {
 			return FeishuEventAcceptResult{}, fmt.Errorf("%w: challenge token", ErrFeishuEventUnauthorized)
 		}
 		return FeishuEventAcceptResult{Challenge: event.Challenge}, nil
@@ -123,22 +119,16 @@ func (s *FeishuNotificationService) VerifyAndReceiveEvent(ctx context.Context, h
 	}
 	legacyCardAction := event.Header.EventType == "" && (event.Type == "card.action.trigger" || (event.OpenID != "" && len(event.Action.Value) > 0))
 	cardAction := legacyCardAction || event.Header.EventType == "card.action.trigger"
-	expectedToken := cfg.VerificationToken
-	if cardAction {
-		expectedToken = cfg.CardVerificationToken
-	}
-	cardSignaturePresent := strings.TrimSpace(headers.Signature) != ""
-	if cardAction && cardSignaturePresent {
-		if err := verifyFeishuCardSignature(headers, expectedToken, body); err != nil {
+	if legacyCardAction {
+		if err := verifyFeishuCardSignature(headers, cfg.VerificationToken, body); err != nil {
 			return FeishuEventAcceptResult{}, err
 		}
-	} else if !cardAction && cfg.EncryptKey != "" {
-		if err := verifyFeishuEventSignature(headers, cfg.EncryptKey, body, time.Now()); err != nil {
+	} else if cfg.EncryptKey != "" {
+		if err := verifyFeishuEventSignature(headers, cfg.EncryptKey, body); err != nil {
 			return FeishuEventAcceptResult{}, err
 		}
-	}
-	if subtle.ConstantTimeCompare([]byte(token), []byte(expectedToken)) != 1 {
-		return FeishuEventAcceptResult{}, fmt.Errorf("%w: payload token", ErrFeishuEventUnauthorized)
+	} else if subtle.ConstantTimeCompare([]byte(token), []byte(cfg.VerificationToken)) != 1 {
+		return FeishuEventAcceptResult{}, fmt.Errorf("%w: unsigned payload token", ErrFeishuEventUnauthorized)
 	}
 	if event.Header.AppID != "" && event.Header.AppID != cfg.AppID {
 		return FeishuEventAcceptResult{}, fmt.Errorf("%w: app id", ErrFeishuEventUnauthorized)
@@ -179,13 +169,9 @@ func verifyFeishuCardSignature(headers FeishuEventHeaders, verificationToken str
 	return nil
 }
 
-func verifyFeishuEventSignature(headers FeishuEventHeaders, encryptKey string, body []byte, now time.Time) error {
-	timestamp, err := strconv.ParseInt(strings.TrimSpace(headers.Timestamp), 10, 64)
-	if err != nil || strings.TrimSpace(headers.Nonce) == "" || strings.TrimSpace(headers.Signature) == "" {
-		return fmt.Errorf("%w: missing event signature headers", ErrFeishuEventUnauthorized)
-	}
-	if delta := now.Sub(time.Unix(timestamp, 0)); delta > 5*time.Minute || delta < -5*time.Minute {
-		return fmt.Errorf("%w: stale event signature", ErrFeishuEventUnauthorized)
+func verifyFeishuEventSignature(headers FeishuEventHeaders, encryptKey string, body []byte) error {
+	if strings.TrimSpace(headers.Signature) == "" || strings.TrimSpace(encryptKey) == "" {
+		return fmt.Errorf("%w: missing event signature", ErrFeishuEventUnauthorized)
 	}
 	sum := sha256.Sum256(append([]byte(headers.Timestamp+headers.Nonce+encryptKey), body...))
 	expected := hex.EncodeToString(sum[:])

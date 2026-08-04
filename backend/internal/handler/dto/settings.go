@@ -98,15 +98,14 @@ type SystemSettings struct {
 	FeishuConnectRedirectURL         string `json:"feishu_connect_redirect_url"`
 	FeishuConnectFrontendRedirectURL string `json:"feishu_connect_frontend_redirect_url"`
 
-	FeishuNotifyEnabled                         bool   `json:"feishu_notify_enabled"`
-	FeishuNotifyAppID                           string `json:"feishu_notify_app_id"`
-	FeishuNotifyAppSecretConfigured             bool   `json:"feishu_notify_app_secret_configured"`
-	FeishuNotifyTokenURL                        string `json:"feishu_notify_token_url"`
-	FeishuNotifyMessageURL                      string `json:"feishu_notify_message_url"`
-	FeishuNotifyPanelURL                        string `json:"feishu_notify_panel_url"`
-	FeishuNotifyVerificationTokenConfigured     bool   `json:"feishu_notify_verification_token_configured"`
-	FeishuNotifyCardVerificationTokenConfigured bool   `json:"feishu_notify_card_verification_token_configured"`
-	FeishuNotifyEncryptKeyConfigured            bool   `json:"feishu_notify_encrypt_key_configured"`
+	FeishuNotifyEnabled                     bool   `json:"feishu_notify_enabled"`
+	FeishuNotifyAppID                       string `json:"feishu_notify_app_id"`
+	FeishuNotifyAppSecretConfigured         bool   `json:"feishu_notify_app_secret_configured"`
+	FeishuNotifyTokenURL                    string `json:"feishu_notify_token_url"`
+	FeishuNotifyMessageURL                  string `json:"feishu_notify_message_url"`
+	FeishuNotifyPanelURL                    string `json:"feishu_notify_panel_url"`
+	FeishuNotifyVerificationTokenConfigured bool   `json:"feishu_notify_verification_token_configured"`
+	FeishuNotifyEncryptKeyConfigured        bool   `json:"feishu_notify_encrypt_key_configured"`
 
 	WeChatConnectEnabled                   bool   `json:"wechat_connect_enabled"`
 	WeChatConnectAppID                     string `json:"wechat_connect_app_id"`

@@ -165,6 +165,8 @@ type FeishuNotificationService struct {
 	tokenExpiresAt     time.Time
 	tokenFlight        singleflight.Group
 	tokenFetchObserver func()
+	cardActionDedupMu  sync.Mutex
+	cardActionRecent   map[string]time.Time
 
 	workerMu     sync.Mutex
 	workerCancel context.CancelFunc

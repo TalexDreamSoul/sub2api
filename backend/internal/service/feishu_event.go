@@ -14,6 +14,7 @@ import (
 	"errors"
 	"fmt"
 	"strings"
+	"time"
 )
 
 var (
@@ -34,14 +35,15 @@ type FeishuEventAcceptResult struct {
 }
 
 type feishuEventEnvelope struct {
-	Schema    string `json:"schema"`
-	Token     string `json:"token"`
-	Type      string `json:"type"`
-	Challenge string `json:"challenge"`
-	Encrypt   string `json:"encrypt"`
-	OpenID    string `json:"open_id"`
-	TenantKey string `json:"tenant_key"`
-	Action    struct {
+	Schema        string `json:"schema"`
+	Token         string `json:"token"`
+	Type          string `json:"type"`
+	Challenge     string `json:"challenge"`
+	Encrypt       string `json:"encrypt"`
+	OpenID        string `json:"open_id"`
+	TenantKey     string `json:"tenant_key"`
+	OpenMessageID string `json:"open_message_id"`
+	Action        struct {
 		Value json.RawMessage `json:"value"`
 	} `json:"action"`
 	Header struct {
@@ -66,6 +68,12 @@ type feishuEventEnvelope struct {
 		OperatorID struct {
 			OpenID string `json:"open_id"`
 		} `json:"operator_id"`
+		Action struct {
+			Value json.RawMessage `json:"value"`
+		} `json:"action"`
+		Context struct {
+			OpenMessageID string `json:"open_message_id"`
+		} `json:"context"`
 	} `json:"event"`
 }
 
@@ -146,12 +154,17 @@ func (s *FeishuNotificationService) VerifyAndReceiveEvent(ctx context.Context, h
 	hash := sha256.Sum256(plainBody)
 	senderOpenID := firstNonEmpty(event.Event.Sender.SenderID.OpenID, event.Event.Operator.OpenID, event.Event.Operator.OperatorID.OpenID, event.Event.OperatorID.OpenID, event.OpenID)
 	tenantKey := firstNonEmpty(event.Header.TenantKey, event.TenantKey)
+	cardActionReservation, duplicateCardAction := s.reserveFeishuCardAction(event, senderOpenID, time.Now())
+	if cardAction && duplicateCardAction {
+		return FeishuEventAcceptResult{Duplicate: true, CardAction: true}, nil
+	}
 	_, inserted, err := s.eventRepo.Receive(ctx, FeishuEventReceiptInput{
 		AppID: cfg.AppID, EventID: eventID, EventType: eventType,
 		TenantKey: tenantKey, SenderOpenID: senderOpenID,
 		Payload: append(json.RawMessage(nil), plainBody...), PayloadSHA256: hex.EncodeToString(hash[:]),
 	})
 	if err != nil {
+		s.releaseFeishuCardAction(cardActionReservation)
 		return FeishuEventAcceptResult{}, err
 	}
 	return FeishuEventAcceptResult{Duplicate: !inserted, CardAction: cardAction}, nil
@@ -167,6 +180,52 @@ func verifyFeishuCardSignature(headers FeishuEventHeaders, verificationToken str
 		return fmt.Errorf("%w: card signature mismatch", ErrFeishuEventUnauthorized)
 	}
 	return nil
+}
+
+func (s *FeishuNotificationService) reserveFeishuCardAction(event feishuEventEnvelope, senderOpenID string, now time.Time) (string, bool) {
+	messageID := firstNonEmpty(event.OpenMessageID, event.Event.Context.OpenMessageID)
+	actionValue := event.Action.Value
+	if len(actionValue) == 0 {
+		actionValue = event.Event.Action.Value
+	}
+	if strings.TrimSpace(messageID) == "" || strings.TrimSpace(senderOpenID) == "" || len(actionValue) == 0 {
+		return "", false
+	}
+	var value any
+	if err := json.Unmarshal(actionValue, &value); err != nil {
+		return "", false
+	}
+	canonicalValue, err := json.Marshal(value)
+	if err != nil {
+		return "", false
+	}
+	fingerprint := sha256.Sum256(append([]byte(messageID+"\x00"+senderOpenID+"\x00"), canonicalValue...))
+	key := hex.EncodeToString(fingerprint[:])
+
+	s.cardActionDedupMu.Lock()
+	defer s.cardActionDedupMu.Unlock()
+	if s.cardActionRecent == nil {
+		s.cardActionRecent = make(map[string]time.Time)
+	}
+	for candidate, expiresAt := range s.cardActionRecent {
+		if !expiresAt.After(now) {
+			delete(s.cardActionRecent, candidate)
+		}
+	}
+	if expiresAt, ok := s.cardActionRecent[key]; ok && expiresAt.After(now) {
+		return key, true
+	}
+	s.cardActionRecent[key] = now.Add(10 * time.Second)
+	return key, false
+}
+
+func (s *FeishuNotificationService) releaseFeishuCardAction(key string) {
+	if key == "" {
+		return
+	}
+	s.cardActionDedupMu.Lock()
+	delete(s.cardActionRecent, key)
+	s.cardActionDedupMu.Unlock()
 }
 
 func verifyFeishuEventSignature(headers FeishuEventHeaders, encryptKey string, body []byte) error {

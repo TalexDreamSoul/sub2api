@@ -40,5 +40,9 @@ func (h *AuthHandler) FeishuEventCallback(c *gin.Context) {
 		c.JSON(http.StatusOK, gin.H{"challenge": result.Challenge})
 		return
 	}
+	if result.CardAction {
+		c.JSON(http.StatusOK, gin.H{})
+		return
+	}
 	c.JSON(http.StatusOK, gin.H{"code": 0})
 }

@@ -120,7 +120,7 @@ func requestRiskTestService(repo *requestRiskTestRepo) *ContentModerationService
 		SettingKeyRequestRiskControlSessionBanTTLSeconds: "1800",
 		SettingKeyRequestRiskControlUABanTTLSeconds:      "1800",
 	}}
-	return NewContentModerationService(settings, repo, nil, nil, nil, nil, nil)
+	return NewContentModerationService(settings, repo, nil, nil, nil, nil, nil, nil)
 }
 
 func TestRequestRiskParsers(t *testing.T) {

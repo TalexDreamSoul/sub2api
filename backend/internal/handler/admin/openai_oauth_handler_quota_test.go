@@ -78,7 +78,7 @@ func TestOpenAIOAuthHandlerQueryQuotaReturnsAccountRecordID(t *testing.T) {
 		})
 		return client, nil
 	})
-	handler := NewOpenAIOAuthHandler(nil, nil, quotaService)
+	handler := NewOpenAIOAuthHandler(nil, nil, quotaService, nil)
 
 	router := gin.New()
 	router.GET("/api/v1/admin/accounts/:id/quota", handler.QueryQuota)

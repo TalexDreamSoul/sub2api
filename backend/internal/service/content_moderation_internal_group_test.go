@@ -364,7 +364,7 @@ func TestContentModerationUpdateConfig_InternalGroupCreatesInternalAPIKey(t *tes
 		groupID: {ID: groupID, Name: "audit-group", Status: StatusActive, Platform: PlatformOpenAI},
 	}}
 	apiKeyRepo := &contentModerationInternalAuditAPIKeyRepo{}
-	svc := NewContentModerationService(settingRepo, nil, nil, groupRepo, userRepo, nil, nil)
+	svc := NewContentModerationService(settingRepo, nil, nil, groupRepo, userRepo, nil, nil, nil)
 	svc.SetAPIKeyRepository(apiKeyRepo)
 
 	_, err := svc.UpdateConfig(context.Background(), UpdateContentModerationConfigInput{
@@ -408,10 +408,9 @@ func TestContentModerationUpdateConfig_InternalGroupRejectsInactiveGroup(t *test
 		&contentModerationInternalAuditGroupRepo{groups: map[int64]*Group{
 			groupID: {ID: groupID, Name: "inactive", Status: StatusDisabled},
 		}},
-		&contentModerationInternalAuditUserRepo{},
+		&contentModerationInternalAuditUserRepo{}, nil,
 		nil,
-		nil,
-	)
+		nil)
 	svc.SetAPIKeyRepository(&contentModerationInternalAuditAPIKeyRepo{})
 
 	_, err := svc.UpdateConfig(context.Background(), UpdateContentModerationConfigInput{

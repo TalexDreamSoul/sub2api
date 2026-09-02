@@ -45,6 +45,48 @@ var bindActiveIPScript = redis.NewScript(`
 	return 0
 `)
 
+var acquireAPIKeySlotScript = redis.NewScript(`
+	redis.replicate_commands()
+	local key = KEYS[1]
+	local maxConcurrency = tonumber(ARGV[1])
+	local ttl = tonumber(ARGV[2])
+	local requestID = ARGV[3]
+
+	local timeResult = redis.call('TIME')
+	local now = tonumber(timeResult[1])
+	local expireBefore = now - ttl
+
+	redis.call('ZREMRANGEBYSCORE', key, '-inf', expireBefore)
+
+	local exists = redis.call('ZSCORE', key, requestID)
+	if exists ~= false then
+		redis.call('ZADD', key, now, requestID)
+		redis.call('EXPIRE', key, ttl)
+		return 1
+	end
+
+	if redis.call('ZCARD', key) < maxConcurrency then
+		redis.call('ZADD', key, now, requestID)
+		redis.call('EXPIRE', key, ttl)
+		return 1
+	end
+
+	return 0
+`)
+
+var getAPIKeyConcurrencyScript = redis.NewScript(`
+	redis.replicate_commands()
+	local key = KEYS[1]
+	local ttl = tonumber(ARGV[1])
+
+	local timeResult = redis.call('TIME')
+	local now = tonumber(timeResult[1])
+	local expireBefore = now - ttl
+
+	redis.call('ZREMRANGEBYSCORE', key, '-inf', expireBefore)
+	return redis.call('ZCARD', key)
+`)
+
 type apiKeyRuntimeCache struct {
 	rdb            *redis.Client
 	slotTTLSeconds int
@@ -131,7 +173,7 @@ func (c *apiKeyRuntimeCache) GetActiveIPs(ctx context.Context, keyID int64, idle
 }
 
 func (c *apiKeyRuntimeCache) AcquireAPIKeySlot(ctx context.Context, keyID int64, maxConcurrency int, requestID string) (bool, error) {
-	result, err := acquireScript.Run(ctx, c.rdb, []string{apiKeyConcurrencyKey(keyID)}, maxConcurrency, c.slotTTLSeconds, requestID).Int()
+	result, err := acquireAPIKeySlotScript.Run(ctx, c.rdb, []string{apiKeyConcurrencyKey(keyID)}, maxConcurrency, c.slotTTLSeconds, requestID).Int()
 	if err != nil {
 		return false, err
 	}
@@ -143,7 +185,7 @@ func (c *apiKeyRuntimeCache) ReleaseAPIKeySlot(ctx context.Context, keyID int64,
 }
 
 func (c *apiKeyRuntimeCache) GetAPIKeyConcurrency(ctx context.Context, keyID int64) (int, error) {
-	result, err := getCountScript.Run(ctx, c.rdb, []string{apiKeyConcurrencyKey(keyID)}, c.slotTTLSeconds).Int()
+	result, err := getAPIKeyConcurrencyScript.Run(ctx, c.rdb, []string{apiKeyConcurrencyKey(keyID)}, c.slotTTLSeconds).Int()
 	if err != nil {
 		return 0, err
 	}

@@ -77,3 +77,40 @@ func TestAPIKeyRepository_GetByKeyForAuth_PreservesMessagesDispatchModelConfig_S
 	require.NotNil(t, got.Group)
 	require.Equal(t, group.MessagesDispatchModelConfig, got.Group.MessagesDispatchModelConfig)
 }
+
+func TestAPIKeyRepository_CreatePersistsRuntimeLimitsForAuthAndIDLookup_SQLite(t *testing.T) {
+	repo, client := newAPIKeyRepoSQLite(t)
+	ctx := context.Background()
+	user := mustCreateAPIKeyRepoUser(t, ctx, client, "getbykey-auth-runtime-limits-unit@test.com")
+	_, err := client.User.UpdateOneID(user.ID).
+		SetAPIKeyMaxActiveIps(1).
+		SetAPIKeyMaxActiveIpsVisible(true).
+		Save(ctx)
+	require.NoError(t, err)
+
+	key := &service.APIKey{
+		UserID:               user.ID,
+		Key:                  "sk-getbykey-auth-runtime-limits-unit",
+		Name:                 "Runtime Limits Key Unit",
+		Status:               service.StatusActive,
+		MaxActiveIPs:         3,
+		IPIdleTimeoutSeconds: 91,
+		MaxConcurrency:       2,
+	}
+	require.NoError(t, repo.Create(ctx, key))
+
+	byID, err := repo.GetByID(ctx, key.ID)
+	require.NoError(t, err)
+	require.Equal(t, 3, byID.MaxActiveIPs)
+	require.Equal(t, 91, byID.IPIdleTimeoutSeconds)
+	require.Equal(t, 2, byID.MaxConcurrency)
+
+	got, err := repo.GetByKeyForAuth(ctx, key.Key)
+	require.NoError(t, err)
+	require.Equal(t, 3, got.MaxActiveIPs)
+	require.Equal(t, 91, got.IPIdleTimeoutSeconds)
+	require.Equal(t, 2, got.MaxConcurrency)
+	require.NotNil(t, got.User)
+	require.Equal(t, 1, got.User.APIKeyMaxActiveIPs)
+	require.True(t, got.User.APIKeyMaxActiveIPsVisible)
+}

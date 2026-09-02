@@ -117,6 +117,8 @@ type UserUpdateFields struct {
 	AdminPermissions bool
 	// APIKeyIPPolicy 覆盖用户级 API Key 活跃 IP 上限及其可见性。
 	APIKeyIPPolicy bool
+	// RestrictPublicGroups 覆盖 restrict_public_groups 列。
+	RestrictPublicGroups bool
 }
 
 // BalanceChange 记录一次余额变更前后的值。

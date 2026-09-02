@@ -4,16 +4,19 @@ import "time"
 
 // APIKeyAuthSnapshot API Key 认证缓存快照（仅包含认证所需字段）
 type APIKeyAuthSnapshot struct {
-	Version     int                      `json:"version"`
-	APIKeyID    int64                    `json:"api_key_id"`
-	UserID      int64                    `json:"user_id"`
-	GroupID     *int64                   `json:"group_id,omitempty"`
-	Name        string                   `json:"name"`
-	Status      string                   `json:"status"`
-	IPWhitelist []string                 `json:"ip_whitelist,omitempty"`
-	IPBlacklist []string                 `json:"ip_blacklist,omitempty"`
-	User        APIKeyAuthUserSnapshot   `json:"user"`
-	Group       *APIKeyAuthGroupSnapshot `json:"group,omitempty"`
+	Version              int                      `json:"version"`
+	APIKeyID             int64                    `json:"api_key_id"`
+	UserID               int64                    `json:"user_id"`
+	GroupID              *int64                   `json:"group_id,omitempty"`
+	Name                 string                   `json:"name"`
+	Status               string                   `json:"status"`
+	IPWhitelist          []string                 `json:"ip_whitelist,omitempty"`
+	IPBlacklist          []string                 `json:"ip_blacklist,omitempty"`
+	MaxActiveIPs         int                      `json:"max_active_ips"`
+	IPIdleTimeoutSeconds int                      `json:"ip_idle_timeout_seconds"`
+	MaxConcurrency       int                      `json:"max_concurrency"`
+	User                 APIKeyAuthUserSnapshot   `json:"user"`
+	Group                *APIKeyAuthGroupSnapshot `json:"group,omitempty"`
 
 	// Quota fields for API Key independent quota feature
 	Quota     float64 `json:"quota"`      // Quota limit in USD (0 = unlimited)
@@ -41,13 +44,16 @@ type APIKeyAuthUserSnapshot struct {
 	Email                      string             `json:"email"`
 	Username                   string             `json:"username"`
 	BalanceNotifyEnabled       bool               `json:"balance_notify_enabled"`
+	RestrictPublicGroups       bool               `json:"restrict_public_groups"`
 	BalanceNotifyThresholdType string             `json:"balance_notify_threshold_type"`
 	BalanceNotifyThreshold     *float64           `json:"balance_notify_threshold,omitempty"`
 	BalanceNotifyExtraEmails   []NotifyEmailEntry `json:"balance_notify_extra_emails,omitempty"`
 	TotalRecharged             float64            `json:"total_recharged"`
 
 	// RPMLimit 用户级每分钟请求数上限（0 = 不限制）；用于 billing_cache_service.checkRPM 兜底判断。
-	RPMLimit int `json:"rpm_limit"`
+	RPMLimit                  int  `json:"rpm_limit"`
+	APIKeyMaxActiveIPs        int  `json:"api_key_max_active_ips"`
+	APIKeyMaxActiveIPsVisible bool `json:"api_key_max_active_ips_visible"`
 
 	// UserGroupRPMOverride 该 API Key 对应的 (user, group) 专属 RPM 覆盖值。
 	// nil = 无 override（回退到 group/user 级）；0 = 不限流；>0 = 专属上限。
@@ -102,6 +108,8 @@ type APIKeyAuthGroupSnapshot struct {
 	// OpenAI Messages 调度配置（仅 openai 平台使用）
 	AllowMessagesDispatch       bool                              `json:"allow_messages_dispatch"`
 	AllowLive                   bool                              `json:"allow_live"`
+	ForceOpenAIFast             bool                              `json:"force_openai_fast"`
+	FreeOpenAIFast              bool                              `json:"free_openai_fast"`
 	DefaultMappedModel          string                            `json:"default_mapped_model,omitempty"`
 	MessagesDispatchModelConfig OpenAIMessagesDispatchModelConfig `json:"messages_dispatch_model_config,omitempty"`
 	ModelsListConfig            GroupModelsListConfig             `json:"models_list_config,omitempty"`
@@ -111,6 +119,8 @@ type APIKeyAuthGroupSnapshot struct {
 
 	// MaxReasoningEffort OpenAI/Codex 请求的推理强度上限，空字符串表示不限制。
 	MaxReasoningEffort string `json:"max_reasoning_effort,omitempty"`
+	// MaxReasoningEffortOverLimit 超过上限时的访问控制：downgrade（默认）或 deny。
+	MaxReasoningEffortOverLimit string `json:"max_reasoning_effort_over_limit,omitempty"`
 	// ReasoningEffortMappings rewrites explicit effort values before the ceiling.
 	ReasoningEffortMappings []ReasoningEffortMapping `json:"reasoning_effort_mappings"`
 

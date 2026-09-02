@@ -35,7 +35,12 @@ func runRequestRisk(c *gin.Context, reqLog *zap.Logger, svc *service.ContentMode
 		Protocol:    protocol,
 	}
 	if openAISvc != nil && apiKey != nil {
-		input.CyberSessionKey = service.CyberSessionBlockKey(apiKey.ID, c, body)
+		input.CyberSessionKey = service.CyberSessionExplicitBlockKey(apiKey.ID, c, body)
+		if input.CyberSessionKey == "" {
+			if keys := service.CyberSessionTranscriptBlockKeys(apiKey.ID, body); len(keys) > 0 {
+				input.CyberSessionKey = keys[0]
+			}
+		}
 		input.SessionBlocked = openAISvc.IsCyberSessionBlockedRaw(c.Request.Context(), input.CyberSessionKey)
 	}
 	decision, err := svc.EvaluateRequestRisk(c.Request.Context(), input)

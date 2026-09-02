@@ -50,6 +50,9 @@ func (r *apiKeyRepository) Create(ctx context.Context, key *service.APIKey) erro
 		SetStatus(key.Status).
 		SetNillableGroupID(key.GroupID).
 		SetNillableLastUsedAt(key.LastUsedAt).
+		SetMaxActiveIps(key.MaxActiveIPs).
+		SetIPIdleTimeoutSeconds(key.IPIdleTimeoutSeconds).
+		SetMaxConcurrency(key.MaxConcurrency).
 		SetQuota(key.Quota).
 		SetQuotaUsed(key.QuotaUsed).
 		SetNillableExpiresAt(key.ExpiresAt).
@@ -138,6 +141,9 @@ func (r *apiKeyRepository) GetByKeyForAuth(ctx context.Context, key string) (*se
 			apikey.FieldStatus,
 			apikey.FieldIPWhitelist,
 			apikey.FieldIPBlacklist,
+			apikey.FieldMaxActiveIps,
+			apikey.FieldIPIdleTimeoutSeconds,
+			apikey.FieldMaxConcurrency,
 			apikey.FieldQuota,
 			apikey.FieldQuotaUsed,
 			apikey.FieldExpiresAt,
@@ -155,6 +161,7 @@ func (r *apiKeyRepository) GetByKeyForAuth(ctx context.Context, key string) (*se
 				user.FieldBalance,
 				user.FieldConcurrency,
 				user.FieldBalanceNotifyEnabled,
+				user.FieldRestrictPublicGroups,
 				user.FieldBalanceNotifyThresholdType,
 				user.FieldBalanceNotifyThreshold,
 				user.FieldBalanceNotifyExtraEmails,
@@ -163,6 +170,8 @@ func (r *apiKeyRepository) GetByKeyForAuth(ctx context.Context, key string) (*se
 				user.FieldLastLoginAt,
 				user.FieldLastActiveAt,
 				user.FieldRpmLimit,
+				user.FieldAPIKeyMaxActiveIps,
+				user.FieldAPIKeyMaxActiveIpsVisible,
 			)
 			q.WithAllowedGroups(func(gq *dbent.GroupQuery) {
 				gq.Select(group.FieldID)
@@ -209,11 +218,14 @@ func (r *apiKeyRepository) GetByKeyForAuth(ctx context.Context, key string) (*se
 				group.FieldSupportedModelScopes,
 				group.FieldAllowMessagesDispatch,
 				group.FieldAllowLive,
+				group.FieldForceOpenaiFast,
+				group.FieldFreeOpenaiFast,
 				group.FieldDefaultMappedModel,
 				group.FieldMessagesDispatchModelConfig,
 				group.FieldModelsListConfig,
 				group.FieldRpmLimit,
 				group.FieldMaxReasoningEffort,
+				group.FieldMaxReasoningEffortOverLimit,
 				group.FieldReasoningEffortMappings,
 				group.FieldPeakRateEnabled,
 				group.FieldPeakStart,
@@ -902,29 +914,32 @@ func apiKeyEntityToService(m *dbent.APIKey) *service.APIKey {
 		return nil
 	}
 	out := &service.APIKey{
-		ID:            m.ID,
-		UserID:        m.UserID,
-		Key:           m.Key,
-		Name:          m.Name,
-		Status:        m.Status,
-		IPWhitelist:   m.IPWhitelist,
-		IPBlacklist:   m.IPBlacklist,
-		LastUsedAt:    m.LastUsedAt,
-		CreatedAt:     m.CreatedAt,
-		UpdatedAt:     m.UpdatedAt,
-		GroupID:       m.GroupID,
-		Quota:         m.Quota,
-		QuotaUsed:     m.QuotaUsed,
-		ExpiresAt:     m.ExpiresAt,
-		RateLimit5h:   m.RateLimit5h,
-		RateLimit1d:   m.RateLimit1d,
-		RateLimit7d:   m.RateLimit7d,
-		Usage5h:       m.Usage5h,
-		Usage1d:       m.Usage1d,
-		Usage7d:       m.Usage7d,
-		Window5hStart: m.Window5hStart,
-		Window1dStart: m.Window1dStart,
-		Window7dStart: m.Window7dStart,
+		ID:                   m.ID,
+		UserID:               m.UserID,
+		Key:                  m.Key,
+		Name:                 m.Name,
+		Status:               m.Status,
+		IPWhitelist:          m.IPWhitelist,
+		IPBlacklist:          m.IPBlacklist,
+		MaxActiveIPs:         m.MaxActiveIps,
+		IPIdleTimeoutSeconds: m.IPIdleTimeoutSeconds,
+		MaxConcurrency:       m.MaxConcurrency,
+		LastUsedAt:           m.LastUsedAt,
+		CreatedAt:            m.CreatedAt,
+		UpdatedAt:            m.UpdatedAt,
+		GroupID:              m.GroupID,
+		Quota:                m.Quota,
+		QuotaUsed:            m.QuotaUsed,
+		ExpiresAt:            m.ExpiresAt,
+		RateLimit5h:          m.RateLimit5h,
+		RateLimit1d:          m.RateLimit1d,
+		RateLimit7d:          m.RateLimit7d,
+		Usage5h:              m.Usage5h,
+		Usage1d:              m.Usage1d,
+		Usage7d:              m.Usage7d,
+		Window5hStart:        m.Window5hStart,
+		Window1dStart:        m.Window1dStart,
+		Window7dStart:        m.Window7dStart,
 	}
 	if m.Edges.User != nil {
 		out.User = userEntityToService(m.Edges.User)
@@ -965,10 +980,13 @@ func userEntityToService(u *dbent.User) *service.User {
 		TotpEnabled:                u.TotpEnabled,
 		TotpEnabledAt:              u.TotpEnabledAt,
 		BalanceNotifyEnabled:       u.BalanceNotifyEnabled,
+		RestrictPublicGroups:       u.RestrictPublicGroups,
 		BalanceNotifyThresholdType: u.BalanceNotifyThresholdType,
 		BalanceNotifyThreshold:     u.BalanceNotifyThreshold,
 		TotalRecharged:             u.TotalRecharged,
 		RPMLimit:                   u.RpmLimit,
+		APIKeyMaxActiveIPs:         u.APIKeyMaxActiveIps,
+		APIKeyMaxActiveIPsVisible:  u.APIKeyMaxActiveIpsVisible,
 		CreatedAt:                  u.CreatedAt,
 		UpdatedAt:                  u.UpdatedAt,
 		DeletedAt:                  u.DeletedAt,
@@ -1039,6 +1057,8 @@ func groupEntityToService(g *dbent.Group) *service.Group {
 		SortOrder:                       g.SortOrder,
 		AllowMessagesDispatch:           g.AllowMessagesDispatch,
 		AllowLive:                       g.AllowLive,
+		ForceOpenAIFast:                 g.ForceOpenaiFast,
+		FreeOpenAIFast:                  g.FreeOpenaiFast,
 		RequireOAuthOnly:                g.RequireOauthOnly,
 		RequirePrivacySet:               g.RequirePrivacySet,
 		DefaultMappedModel:              g.DefaultMappedModel,
@@ -1046,6 +1066,7 @@ func groupEntityToService(g *dbent.Group) *service.Group {
 		ModelsListConfig:                g.ModelsListConfig,
 		RPMLimit:                        g.RpmLimit,
 		MaxReasoningEffort:              g.MaxReasoningEffort,
+		MaxReasoningEffortOverLimit:     g.MaxReasoningEffortOverLimit,
 		ReasoningEffortMappings:         g.ReasoningEffortMappings,
 		PeakRateEnabled:                 g.PeakRateEnabled,
 		PeakStart:                       g.PeakStart,

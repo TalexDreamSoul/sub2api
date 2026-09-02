@@ -798,6 +798,9 @@ func (s *AccountUsageService) getOpenAIUsage(ctx context.Context, account *Accou
 					if updates := buildCodexSparkWindowExtraUpdates(quotaUsage, now); len(updates) > 0 {
 						mergeAccountExtra(account, updates)
 						s.persistOpenAICodexProbeSnapshot(account.ID, updates)
+						if account.ParentAccountID != nil {
+							notifyOpenAIAutoReset(*account.ParentAccountID)
+						}
 						if usage.UpdatedAt == nil {
 							usage.UpdatedAt = &now
 						}
@@ -996,6 +999,7 @@ func (s *AccountUsageService) persistOpenAICodexProbeSnapshot(accountID int64, u
 		if s.balanceNotifyService != nil {
 			s.balanceNotifyService.CheckPersistedOpenAIQuotaSnapshot(updateCtx, accountID)
 		}
+		notifyOpenAIAutoReset(accountID)
 	}()
 }
 

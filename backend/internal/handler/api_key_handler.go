@@ -361,13 +361,6 @@ func (h *APIKeyHandler) GetRuntime(c *gin.Context) {
 		response.ErrorFrom(c, err)
 		return
 	}
-	if key.User != nil && key.User.APIKeyMaxActiveIPs > 0 && !key.User.APIKeyMaxActiveIPsVisible {
-		status.MaxActiveIPs = key.MaxActiveIPs
-		if key.MaxActiveIPs <= 0 {
-			status.ActiveIPCount = 0
-			status.ActiveIPs = []service.APIKeyActiveIP{}
-		}
-	}
 	response.Success(c, status)
 }
 

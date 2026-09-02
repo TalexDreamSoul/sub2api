@@ -76,6 +76,7 @@ type CreateUserRequest struct {
 	APIKeyMaxActiveIPs        int       `json:"api_key_max_active_ips"`
 	APIKeyMaxActiveIPsVisible bool      `json:"api_key_max_active_ips_visible"`
 	AllowedGroups             []int64   `json:"allowed_groups"`
+	RestrictPublicGroups      bool      `json:"restrict_public_groups"`
 }
 
 // UpdateUserRequest represents admin update user request
@@ -94,6 +95,7 @@ type UpdateUserRequest struct {
 	APIKeyMaxActiveIPsVisible *bool     `json:"api_key_max_active_ips_visible"`
 	Status                    string    `json:"status" binding:"omitempty,oneof=active disabled"`
 	AllowedGroups             *[]int64  `json:"allowed_groups"`
+	RestrictPublicGroups      *bool     `json:"restrict_public_groups"`
 	// GroupRates 用户专属分组倍率配置
 	// map[groupID]*rate，nil 表示删除该分组的专属倍率
 	GroupRates map[int64]*float64 `json:"group_rates"`
@@ -327,6 +329,7 @@ func (h *UserHandler) Create(c *gin.Context) {
 		APIKeyMaxActiveIPs:        req.APIKeyMaxActiveIPs,
 		APIKeyMaxActiveIPsVisible: req.APIKeyMaxActiveIPsVisible,
 		AllowedGroups:             req.AllowedGroups,
+		RestrictPublicGroups:      req.RestrictPublicGroups,
 		ActorAdminID:              getAdminIDFromContext(c),
 	})
 	if err != nil {
@@ -402,6 +405,7 @@ func (h *UserHandler) Update(c *gin.Context) {
 		APIKeyMaxActiveIPsVisible: req.APIKeyMaxActiveIPsVisible,
 		Status:                    req.Status,
 		AllowedGroups:             req.AllowedGroups,
+		RestrictPublicGroups:      req.RestrictPublicGroups,
 		GroupRates:                req.GroupRates,
 		ActorAdminID:              getAdminIDFromContext(c),
 	})

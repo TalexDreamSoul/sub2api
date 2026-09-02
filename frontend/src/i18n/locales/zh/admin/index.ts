@@ -7,6 +7,7 @@ import settings from './settings'
 import quotaStatus from './quotaStatus'
 import audit from './audit'
 import promptAudit from './promptAudit'
+import plugins from './plugins'
 
 export default {
   ...overview,
@@ -18,4 +19,5 @@ export default {
   ...quotaStatus,
   ...audit,
   ...promptAudit,
+  ...plugins,
 }

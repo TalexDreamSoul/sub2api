@@ -4,6 +4,7 @@ package service
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"strings"
 	"sync"
@@ -295,13 +296,14 @@ func TestAPIKeyService_SnapshotRoundTrip_PreservesReasoningEffortPolicy(t *testi
 			Concurrency: 3,
 		},
 		Group: &Group{
-			ID:                 groupID,
-			Name:               "composite",
-			Platform:           PlatformComposite,
-			Status:             StatusActive,
-			SubscriptionType:   SubscriptionTypeStandard,
-			RateMultiplier:     1,
-			MaxReasoningEffort: "medium",
+			ID:                          groupID,
+			Name:                        "composite",
+			Platform:                    PlatformComposite,
+			Status:                      StatusActive,
+			SubscriptionType:            SubscriptionTypeStandard,
+			RateMultiplier:              1,
+			MaxReasoningEffort:          "medium",
+			MaxReasoningEffortOverLimit: ReasoningEffortOverLimitDeny,
 			ReasoningEffortMappings: []ReasoningEffortMapping{
 				{From: "max", To: "xhigh"},
 			},
@@ -315,7 +317,42 @@ func TestAPIKeyService_SnapshotRoundTrip_PreservesReasoningEffortPolicy(t *testi
 	require.NotNil(t, roundTrip.Group)
 	require.Equal(t, PlatformComposite, roundTrip.Group.Platform)
 	require.Equal(t, "medium", roundTrip.Group.MaxReasoningEffort)
+	require.Equal(t, ReasoningEffortOverLimitDeny, roundTrip.Group.MaxReasoningEffortOverLimit)
 	require.Equal(t, apiKey.Group.ReasoningEffortMappings, roundTrip.Group.ReasoningEffortMappings)
+}
+
+func TestAPIKeyService_SnapshotRoundTrip_PreservesRuntimeLimits(t *testing.T) {
+	svc := NewAPIKeyService(nil, nil, nil, nil, nil, nil, &config.Config{})
+	apiKey := &APIKey{
+		ID:                    1,
+		UserID:                2,
+		Key:                   "k-runtime-limits",
+		Status:                StatusActive,
+		MaxActiveIPs:          3,
+		IPIdleTimeoutSeconds:  91,
+		MaxConcurrency:        2,
+		User: &User{
+			ID:                  2,
+			Status:              StatusActive,
+			Role:                RoleUser,
+			APIKeyMaxActiveIPs:  1,
+		},
+	}
+
+	snapshot := svc.snapshotFromAPIKey(context.Background(), apiKey)
+	require.NotNil(t, snapshot)
+	payload, err := json.Marshal(snapshot)
+	require.NoError(t, err)
+	var restored APIKeyAuthSnapshot
+	require.NoError(t, json.Unmarshal(payload, &restored))
+
+	roundTrip := svc.snapshotToAPIKey(apiKey.Key, &restored)
+	require.NotNil(t, roundTrip)
+	require.Equal(t, 3, roundTrip.MaxActiveIPs)
+	require.Equal(t, 91, roundTrip.IPIdleTimeoutSeconds)
+	require.Equal(t, 2, roundTrip.MaxConcurrency)
+	require.Equal(t, 1, roundTrip.User.APIKeyMaxActiveIPs)
+	require.Equal(t, 1, EffectiveAPIKeyMaxActiveIPs(roundTrip))
 }
 
 func TestAPIKeyService_GetByKey_IgnoresLegacyAuthCacheSnapshotWithoutMessagesDispatchConfig(t *testing.T) {

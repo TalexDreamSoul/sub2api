@@ -35,6 +35,10 @@ func (r *quotaModeRepoStub) InsertHistoryBatch(_ context.Context, rows []*Channe
 	return nil
 }
 
+func (r *quotaModeRepoStub) RecordIncidentObservation(context.Context, ChannelMonitorIncidentObservation) error {
+	return nil
+}
+
 func (r *quotaModeRepoStub) MarkChecked(_ context.Context, id int64, _ time.Time) error {
 	r.markedIDs = append(r.markedIDs, id)
 	return nil

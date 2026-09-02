@@ -7,24 +7,25 @@ import (
 )
 
 type User struct {
-	ID               int64
-	Email            string
-	Username         string
-	Notes            string
-	AvatarURL        string
-	AvatarSource     string
-	AvatarMIME       string
-	AvatarByteSize   int
-	AvatarSHA256     string
-	PasswordHash     string
-	Role             string
-	AdminPermissions []string
-	Balance          float64
-	FrozenBalance    float64
-	Concurrency      int
-	Status           string
-	AllowedGroups    []int64
-	TokenVersion     int64 // Incremented on password change to invalidate existing tokens
+	ID                   int64
+	Email                string
+	Username             string
+	Notes                string
+	AvatarURL            string
+	AvatarSource         string
+	AvatarMIME           string
+	AvatarByteSize       int
+	AvatarSHA256         string
+	PasswordHash         string
+	Role                 string
+	AdminPermissions     []string
+	Balance              float64
+	FrozenBalance        float64
+	Concurrency          int
+	Status               string
+	AllowedGroups        []int64
+	RestrictPublicGroups bool
+	TokenVersion         int64 // Incremented on password change to invalidate existing tokens
 	// TokenVersionResolved indicates TokenVersion already contains the fingerprint-derived
 	// value expected in JWT claims and refresh-token state.
 	TokenVersionResolved bool
@@ -88,14 +89,16 @@ func (u *User) IsActive() bool {
 
 // CanBindGroup checks whether a user can bind to a given group.
 // For standard groups:
-// - Public groups (non-exclusive): all users can bind
-// - Exclusive groups: only users with the group in AllowedGroups can bind
+//   - Public groups (non-exclusive): bindable by every user, unless the user has
+//     RestrictPublicGroups set, in which case the group must be in AllowedGroups
+//   - Exclusive groups: only users with the group in AllowedGroups can bind
 func (u *User) CanBindGroup(groupID int64, isExclusive bool) bool {
-	// 公开分组（非专属）：所有用户都可以绑定
-	if !isExclusive {
+	// 公开分组（非专属）：默认所有用户都可以绑定；仅当该用户开启了公开分组
+	// 限制时，才需要落在 AllowedGroups 中。
+	if !isExclusive && !u.RestrictPublicGroups {
 		return true
 	}
-	// 专属分组：需要在 AllowedGroups 中
+	// 专属分组，以及受限用户的公开分组：需要在 AllowedGroups 中
 	for _, id := range u.AllowedGroups {
 		if id == groupID {
 			return true

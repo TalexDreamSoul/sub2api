@@ -154,6 +154,7 @@ func (s *adminServiceImpl) CreateUser(ctx context.Context, input *CreateUserInpu
 		APIKeyMaxActiveIPsVisible: input.APIKeyMaxActiveIPsVisible,
 		Status:                    StatusActive,
 		AllowedGroups:             input.AllowedGroups,
+		RestrictPublicGroups:      input.RestrictPublicGroups,
 	}
 	if err := user.SetPassword(input.Password); err != nil {
 		return nil, err
@@ -314,6 +315,12 @@ func (s *adminServiceImpl) UpdateUser(ctx context.Context, id int64, input *Upda
 		fields.AllowedGroups = true
 	}
 
+	oldRestrictPublicGroups := user.RestrictPublicGroups
+	if input.RestrictPublicGroups != nil {
+		user.RestrictPublicGroups = *input.RestrictPublicGroups
+		fields.RestrictPublicGroups = true
+	}
+
 	if err := s.userRepo.Update(ctx, user, fields); err != nil {
 		return nil, err
 	}
@@ -333,8 +340,8 @@ func (s *adminServiceImpl) UpdateUser(ctx context.Context, id int64, input *Upda
 
 	if s.authCacheInvalidator != nil {
 		// RPMLimit 直接参与 billing_cache_service.checkRPM 的三级级联，
-		// allowed_groups 和用户级 API Key 活跃 IP 策略也参与 API Key 授权热路径。
-		if user.Concurrency != oldConcurrency || user.Status != oldStatus || user.Role != oldRole || !sameStringSet(user.AdminPermissions, oldAdminPermissions) || user.RPMLimit != oldRPMLimit || user.APIKeyMaxActiveIPs != oldAPIKeyMaxActiveIPs || user.APIKeyMaxActiveIPsVisible != oldAPIKeyMaxActiveIPsVisible || !sameInt64Set(user.AllowedGroups, oldAllowedGroups) {
+		// allowed_groups、restrict_public_groups 和用户级 API Key 活跃 IP 策略都参与 API Key 授权热路径。
+		if user.Concurrency != oldConcurrency || user.Status != oldStatus || user.Role != oldRole || !sameStringSet(user.AdminPermissions, oldAdminPermissions) || user.RPMLimit != oldRPMLimit || user.APIKeyMaxActiveIPs != oldAPIKeyMaxActiveIPs || user.APIKeyMaxActiveIPsVisible != oldAPIKeyMaxActiveIPsVisible || user.RestrictPublicGroups != oldRestrictPublicGroups || !sameInt64Set(user.AllowedGroups, oldAllowedGroups) {
 			s.authCacheInvalidator.InvalidateAuthCacheByUserID(ctx, user.ID)
 		}
 	}
